@@ -12,7 +12,7 @@ BLOGGER_EMAIL = "ktysarikaya.netdijital1291@blogger.com"
 
 genai.configure(api_key=GEMINI_API_KEY)
 # En kararlı çalışan güncel model adı
-model = genai.GenerativeModel('gemini-1.5-flash')
+model = genai.GenerativeModel('gemini-2.5-flash')
 
 RSS_FEEDS = [
     "https://techcrunch.com/feed/" # Test için şimdilik ilk beslemeyle başlayalım
