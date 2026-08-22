@@ -12,7 +12,7 @@ SENDER_PASSWORD = os.environ.get("SENDER_PASSWORD")
 BLOGGER_EMAIL = "ktysarikaya.netdijital1291@blogger.com" # Blogger yayın adresi
 
 genai.configure(api_key=GEMINI_API_KEY)
-model = genai.GenerativeModel('gemini-1.5-flash')
+model = genai.GenerativeModel('gemini-flash')
 
 # --- 20 ADET GLOBAL KAYNAK ---
 RSS_FEEDS = [
