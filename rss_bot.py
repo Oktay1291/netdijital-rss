@@ -3,31 +3,10 @@ import os
 import smtplib
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
-import google.generativeai as genai
 
-GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY")
 SENDER_EMAIL = os.environ.get("SENDER_EMAIL") 
 SENDER_PASSWORD = os.environ.get("SENDER_PASSWORD") 
 BLOGGER_EMAIL = "ktysarikaya.netdijital1291@blogger.com"
-
-genai.configure(api_key=GEMINI_API_KEY)
-
-# Akıllı Model Seçim Listesi
-DENENECEK_MODELLER = ['gemini-1.5-flash', 'gemini-1.5-pro', 'gemini-flash', 'gemini-2.0-flash']
-
-aktif_model = None
-for model_adi in DENENECEK_MODELLER:
-    try:
-        test_model = genai.GenerativeModel(model_adi)
-        test_model.generate_content("test")
-        aktif_model = test_model
-        print(f"Başarıyla bağlanan model: {model_adi}")
-        break
-    except Exception as e:
-        print(f"{model_adi} denendi, uygun değil, sonrakine geçiliyor...")
-
-if not aktif_model:
-    raise Exception("Hiçbir Gemini modeli aktif edilemedi!")
 
 RSS_FEEDS = [
     "https://techcrunch.com/feed/"
@@ -74,11 +53,11 @@ for feed in RSS_FEEDS:
             print(f"İşleniyor: {entry.title}")
             
             try:
-                prompt = f"Şu İngilizce haberi Türkçe, teknoloji blogum NetDijital için SEO uyumlu ve profesyonel bir dille yeniden yaz. Haberin sonuna 'Kaynak: {entry.title}' şeklinde link ekle. HTML formatında (sadece <h2>, <p>, <strong> etiketleri kullanarak) ver. Haber içeriği: {entry.title} - {entry.summary}"
-                response = aktif_model.generate_content(prompt)
-                turkce_icerik = response.text.replace("```html", "").replace("```", "").strip()
+                # Yapay zeka kullanılmadan doğrudan haber içeriği HTML olarak hazırlanır
+                haber_icerigi = entry.summary if hasattr(entry, 'summary') else entry.title
+                html_icerik = f"<p>{haber_icerigi}</p><br><p><strong>Kaynak:</strong> <a href='{haber_linki}'>{entry.title}</a></p>"
                 
-                send_email_to_blogger(entry.title, turkce_icerik)
+                send_email_to_blogger(entry.title, html_icerik)
                 
                 yeni_yayinlanacak_linkler.append(haber_linki)
                 yayinlananlar.add(haber_linki)
