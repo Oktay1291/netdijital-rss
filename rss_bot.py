@@ -3,15 +3,13 @@ import os
 import smtplib
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
-from google import genai
+import urllib.request
+import json
 
-GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY")
 SENDER_EMAIL = os.environ.get("SENDER_EMAIL") 
 SENDER_PASSWORD = os.environ.get("SENDER_PASSWORD") 
+GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY")
 BLOGGER_EMAIL = "ktysarikaya.netdijital1291@blogger.com"
-
-# Yeni ve kararlı genai kütüphanesi istemcisi
-client = genai.Client(api_key=GEMINI_API_KEY)
 
 RSS_FEEDS = [
     "https://techcrunch.com/feed/"
@@ -27,11 +25,30 @@ if os.path.exists(MEMORY_FILE):
 islenen_haber_sayisi = 0
 yeni_yayinlanacak_linkler = []
 
+def ai_cevir(metin):
+    # Google API'ye doğrudan HTTP isteği atarak model karmaşasından ve import hatalarından kurtuluyoruz
+    url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key={GEMINI_API_KEY}"
+    
+    prompt = f"Şu İngilizce haberi teknoloji blogum NetDijital için SEO uyumlu, profesyonel bir dille Türkçe'ye çevir ve özetle. Sadece <h2>, <p>, <strong> etiketleri kullanarak HTML formatında ver. Haber: {metin}"
+    
+    data = {
+        "contents": [{"parts": [{"text": prompt}]}]
+    }
+    
+    req = urllib.request.Request(url, data=json.dumps(data).encode('utf-8'), headers={'Content-Type': 'application/json'})
+    try:
+        with urllib.request.urlopen(req) as response:
+            res_data = json.loads(response.read().decode('utf-8'))
+            return res_data['candidates'][0]['content']['parts'][0]['text'].replace("```html", "").replace("```", "").strip()
+    except Exception as e:
+        print(f"AI Çeviri Hatası: {e}")
+        return metin
+
 def send_email_to_blogger(title, content):
     msg = MIMEMultipart()
     msg['From'] = SENDER_EMAIL
     msg['To'] = BLOGGER_EMAIL
-    msg['Subject'] = title # Artık Türkçe başlık gidecek
+    msg['Subject'] = title
     msg.attach(MIMEText(content, 'html', 'utf-8'))
     
     try:
@@ -58,50 +75,25 @@ for feed in RSS_FEEDS:
             print(f"İşleniyor: {entry.title}")
             
             try:
-                # RSS'ten görsel URL'sini yakalama (varsa)
+                # Görsel yakalama
                 gorsel_url = ""
                 if hasattr(entry, 'media_content') and entry.media_content:
                     gorsel_url = entry.media_content[0].get('url', '')
                 elif hasattr(entry, 'enclosures') and entry.enclosures:
                     gorsel_url = entry.enclosures[0].get('href', '')
 
-                # Yapay zekadan hem Türkçe başlık hem içerik hem de etiketleri istiyoruz
-                prompt = f"""
-                Aşağıdaki İngilizce haberi teknoloji blogum NetDijital için profesyonelce işle.
-                Şu formatta tam olarak JSON benzeri veya etiketli metin ver:
-                [TURKCE_BASLIK]: (Buraya ilgi çekici Türkçe başlık yaz)
-                [ETIKETLER]: (Virgülle ayrılmış 3-4 adet teknoloji etiketi yaz, örn: yapay zeka, teknoloji, donanım)
-                [ICERIK]: (Sadece <h2>, <p>, <strong> etiketleri kullanarak SEO uyumlu HTML makale içeriği yaz. Haberin sonuna 'Kaynak: Orijinal Başlık' şeklinde link ekle.)
-
-                Haber: {entry.title} - {entry.summary}
-                """
-
-                response = client.models.generate_content(
-                    model='gemini-2.5-flash',
-                    contents=prompt,
-                )
+                # Başlığı ve içeriği yapay zekaya Türkçe'ye çevirtiyoruz
+                tr_baslik = ai_cevir(f"Bu haber başlığını dikkat çekici ve akıcı bir Türkçe teknoloji haberi başlığına çevir: {entry.title}")
+                tr_baslik = tr_baslik.replace("<h2>", "").replace("</h2>", "").replace("<p>", "").replace("</p>", "").strip()
                 
-                yanit_metni = response.text
+                ham_icerik = entry.summary if hasattr(entry, 'summary') else entry.title
+                tr_icerik = ai_cevir(ham_icerik)
 
-                # Yapay zekadan gelen yanıtı parçalarına ayıralım
-                tr_baslik = entry.title # Yedek olarak orijinal başlık
-                etiketler = "teknoloji, gündem"
-                html_govde = yanit_metni
-
-                if "[TURKCE_BASLIK]:" in yanit_metni and "[ICERIK]:" in yanit_metni:
-                    parts = yanit_metni.split("[ICERIK]:")
-                    baslik_bolumu = parts[0]
-                    html_govde = parts[1].replace("```html", "").replace("```", "").strip()
-                    
-                    if "[TURKCE_BASLIK]:" in baslik_bolumu:
-                        tr_baslik = baslik_bolumu.split("[TURKCE_BASLIK]:")[1].split("[ETIKETLER]:")[0].replace("\n", "").strip()
-
-                # Eğer görsel varsa içeriğin en başına ekleyelim ki Blogger kapak olarak alsın
                 gorsel_html = f"<img src='{gorsel_url}' style='width:100%; border-radius:8px; margin-bottom:15px;' /><br>" if gorsel_url else ""
+                 kaynak_html = f"<br><p><strong>Kaynak:</strong> <a href='{haber_linki}'>{entry.title}</a></p>"
                 
-                final_icerik = gorsel_html + html_govde
+                final_icerik = gorsel_html + tr_icerik + kaynak_html
 
-                # Blogger'a Türkçe başlık ve içerikle gönder
                 send_email_to_blogger(tr_baslik, final_icerik)
                 
                 yeni_yayinlanacak_linkler.append(haber_linki)
