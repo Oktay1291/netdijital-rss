@@ -26,7 +26,6 @@ islenen_haber_sayisi = 0
 yeni_yayinlanacak_linkler = []
 
 def ai_cevir(metin):
-    # Google API'ye doğrudan HTTP isteği atarak model karmaşasından ve import hatalarından kurtuluyoruz
     url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key={GEMINI_API_KEY}"
     
     prompt = f"Şu İngilizce haberi teknoloji blogum NetDijital için SEO uyumlu, profesyonel bir dille Türkçe'ye çevir ve özetle. Sadece <h2>, <p>, <strong> etiketleri kullanarak HTML formatında ver. Haber: {metin}"
@@ -75,14 +74,12 @@ for feed in RSS_FEEDS:
             print(f"İşleniyor: {entry.title}")
             
             try:
-                # Görsel yakalama
                 gorsel_url = ""
                 if hasattr(entry, 'media_content') and entry.media_content:
                     gorsel_url = entry.media_content[0].get('url', '')
                 elif hasattr(entry, 'enclosures') and entry.enclosures:
                     gorsel_url = entry.enclosures[0].get('href', '')
 
-                # Başlığı ve içeriği yapay zekaya Türkçe'ye çevirtiyoruz
                 tr_baslik = ai_cevir(f"Bu haber başlığını dikkat çekici ve akıcı bir Türkçe teknoloji haberi başlığına çevir: {entry.title}")
                 tr_baslik = tr_baslik.replace("<h2>", "").replace("</h2>", "").replace("<p>", "").replace("</p>", "").strip()
                 
@@ -90,7 +87,7 @@ for feed in RSS_FEEDS:
                 tr_icerik = ai_cevir(ham_icerik)
 
                 gorsel_html = f"<img src='{gorsel_url}' style='width:100%; border-radius:8px; margin-bottom:15px;' /><br>" if gorsel_url else ""
-                 kaynak_html = f"<br><p><strong>Kaynak:</strong> <a href='{haber_linki}'>{entry.title}</a></p>"
+                kaynak_html = f"<br><p><strong>Kaynak:</strong> <a href='{haber_linki}'>{entry.title}</a></p>"
                 
                 final_icerik = gorsel_html + tr_icerik + kaynak_html
 
