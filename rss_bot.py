@@ -1,12 +1,11 @@
 import feedparser
 import os
-import smtplib
-from email.mime.text import MIMEText
-from email.mime.multipart import MIMEMultipart
+import json
+import urllib.request
+import base64
 
-SENDER_EMAIL = os.environ.get("SENDER_EMAIL") 
-SENDER_PASSWORD = os.environ.get("SENDER_PASSWORD") 
-BLOGGER_EMAIL = "ktysarikaya.netdijital1291@blogger.com"
+BLOG_ID = os.environ.get("BLOGGER_BLOG_ID")
+GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY")
 
 RSS_FEEDS = [
     "https://techcrunch.com/feed/"
@@ -22,21 +21,30 @@ if os.path.exists(MEMORY_FILE):
 islenen_haber_sayisi = 0
 yeni_yayinlanacak_linkler = []
 
-def send_email_to_blogger(title, content):
-    msg = MIMEMultipart()
-    msg['From'] = SENDER_EMAIL
-    msg['To'] = BLOGGER_EMAIL
-    msg['Subject'] = title
-    msg.attach(MIMEText(content, 'html', 'utf-8'))
+# E-posta yerine doğrudan Google API üzerinden Blogger'a taslak/yayın olarak ekleme fonksiyonu
+def post_to_blogger_api(title, content):
+    # Google API Anahtarı ile Blogger API v3 uç noktası
+    url = f"https://www.googleapis.com/blogger/v3/blogs/{BLOG_ID}/posts/?key={GEMINI_API_KEY}"
+    
+    body = {
+        "title": title,
+        "content": content
+    }
+    
+    req = urllib.request.Request(
+        url, 
+        data=json.dumps(body).encode('utf-8'), 
+        headers={'Content-Type': 'application/json'}
+    )
     
     try:
-        with smtplib.SMTP_SSL('smtp.gmail.com', 465) as server:
-            server.login(SENDER_EMAIL, SENDER_PASSWORD)
-            server.sendmail(SENDER_EMAIL, BLOGGER_EMAIL, msg.as_string())
-        print("E-posta Blogger'a başarıyla iletildi!")
+        with urllib.request.urlopen(req) as response:
+            res_data = json.loads(response.read().decode('utf-8'))
+            print("Blogger API ile yazı başarıyla oluşturuldu!")
+            return True
     except Exception as e:
-        print(f"E-posta gönderim hatası: {e}")
-        raise e
+        print(f"Blogger API Gönderim Hatası: {e}")
+        return False
 
 for feed in RSS_FEEDS:
     if islenen_haber_sayisi >= 1:
@@ -64,12 +72,12 @@ for feed in RSS_FEEDS:
                 gorsel_html = f"<img src='{gorsel_url}' style='width:100%; border-radius:8px; margin-bottom:15px;' /><br>" if gorsel_url else ""
                 html_icerik = f"{gorsel_html}<p>{haber_icerigi}</p><br><p><strong>Kaynak:</strong> <a href='{haber_linki}'>{entry.title}</a></p>"
                 
-                send_email_to_blogger(entry.title, html_icerik)
+                basarili = post_to_blogger_api(entry.title, html_icerik)
                 
-                yeni_yayinlanacak_linkler.append(haber_linki)
-                yayinlananlar.add(haber_linki)
-                islenen_haber_sayisi += 1
-                print("Başarıyla Blogger'a gönderildi!")
+                if basarili:
+                    yeni_yayinlanacak_linkler.append(haber_linki)
+                    yayinlananlar.add(haber_linki)
+                    islenen_haber_sayisi += 1
                 
             except Exception as e:
                 print(f"Hata oluştu: {e}")
