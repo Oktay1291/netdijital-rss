@@ -26,7 +26,8 @@ islenen_haber_sayisi = 0
 yeni_yayinlanacak_linkler = []
 
 def ai_cevir(metin):
-    url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key={GEMINI_API_KEY}"
+    # En güncel ve kararlı endpoint yolu
+    url = f"https://generativelanguage.googleapis.com/v1/models/gemini-1.5-flash:generateContent?key={GEMINI_API_KEY}"
     
     prompt = f"Şu İngilizce haberi teknoloji blogum NetDijital için SEO uyumlu, profesyonel bir dille Türkçe'ye çevir ve özetle. Sadece <h2>, <p>, <strong> etiketleri kullanarak HTML formatında ver. Haber: {metin}"
     
