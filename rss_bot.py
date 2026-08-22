@@ -1,41 +1,62 @@
 import feedparser
-import smtplib
-from email.mime.text import MIMEText
-from email.mime.multipart import MIMEMultipart
 import os
 
-RSS_URL = "https://www.wired.com/feed/"
-BLOGGER_EMAIL = os.environ.get("BLOGGER_EMAIL")
-MAIL_PASSWORD = os.environ.get("MAIL_PASSWORD")
+# 17 adet global kaynağımız
+RSS_FEEDS = [
+    "https://techcrunch.com/feed/",
+    "https://thenextweb.com/feed/",
+    "https://www.wired.com/feed/rss",
+    "https://gizmodo.com/rss",
+    "https://mashable.com/feed/",
+    "https://www.theverge.com/rss/index.xml",
+    "https://www.digitaltrends.com/feed/",
+    "https://www.techradar.com/rss",
+    "https://www.businessinsider.com/rss",
+    "https://feeds.macrumors.com/MacRumors-All",
+    "https://venturebeat.com/feed/",
+    "https://blog.playstation.com/feed/",
+    "https://www.engadget.com/rss.xml",
+    "https://www.slashgear.com/feed/",
+    "https://www.ubergizmo.com/feed/",
+    "https://www.droid-life.com/feed/",
+    "https://www.eurogamer.net/feed"
+]
 
-def fetch_and_send():
-    feed = feedparser.parse(RSS_URL)
-    if not feed.entries:
-        print("Haber bulunamadı.")
-        return
+MEMORY_FILE = "yayinlanan_haberler.txt"
 
-    latest_entry = feed.entries[0]
-    title = latest_entry.title
-    link = latest_entry.link
-    summary = getattr(latest_entry, 'summary', '')
+# 1. Eski haberleri hafızadan oku
+yayinlananlar = set()
+if os.path.exists(MEMORY_FILE):
+    with open(MEMORY_FILE, "r", encoding="utf-8") as f:
+        yayinlananlar = set(f.read().splitlines())
 
-    msg = MIMEMultipart()
-    msg['Subject'] = title
-    msg['From'] = BLOGGER_EMAIL
-    msg['To'] = BLOGGER_EMAIL
+islenen_haber_sayisi = 0
+yeni_yayinlanacak_linkler = []
 
-    body = f"{summary}<br><br><a href='{link}'>Haberi Kaynağından Oku</a>"
-    msg.attach(MIMEText(body, 'html'))
+# 2. Kaynakları tara ve sadece 2 YENİ haber bul
+for feed in RSS_FEEDS:
+    if islenen_haber_sayisi >= 2:
+        break # 2 habere ulaştıysak taramayı durdur
+    
+    parsed_feed = feedparser.parse(feed)
+    for entry in parsed_feed.entries:
+        if islenen_haber_sayisi >= 2:
+            break
+            
+        haber_linki = entry.link
+        
+        # Eğer haber daha önce YAYINLANMADIYSA
+        if haber_linki not in yayinlananlar:
+            print(f"Yeni Haber Bulundu: {entry.title}")
+            
+            # ---> BURAYA GEMINI ÇEVİRİ VE SMTP (E-POSTA) GÖNDERİM KODLARIN GELECEK <---
+            
+            # İşlem başarılı olursa linki listeye ekle
+            yeni_yayinlanacak_linkler.append(haber_linki)
+            yayinlananlar.add(haber_linki)
+            islenen_haber_sayisi += 1
 
-    try:
-        server = smtplib.SMTP('smtp.gmail.com', 587)
-        server.starttls()
-        server.login(BLOGGER_EMAIL, MAIL_PASSWORD)
-        server.sendmail(BLOGGER_EMAIL, BLOGGER_EMAIL, msg.as_string())
-        server.quit()
-        print(f"Başarıyla gönderildi: {title}")
-    except Exception as e:
-        print(f"Hata oluştu: {e}")
-
-if __name__ == "__main__":
-    fetch_and_send()
+# 3. Yeni yayınlanan haberleri hafıza dosyasına kaydet
+with open(MEMORY_FILE, "a", encoding="utf-8") as f:
+    for link in yeni_yayinlanacak_linkler:
+        f.write(link + "\n")
