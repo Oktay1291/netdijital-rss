@@ -1,63 +1,56 @@
-import feedparser
 import os
-import smtplib
-from email.mime.text import MIMEText
-from email.mime.multipart import MIMEMultipart
+import feedparser
+from google.oauth2.credentials import Credentials
+from googleapiclient.discovery import build
 
-SENDER_EMAIL = os.environ.get("SENDER_EMAIL") 
-SENDER_PASSWORD = os.environ.get("SENDER_PASSWORD") 
-BLOGGER_EMAIL = "ktysarikaya.netdijital1291@blogger.com"
+# GitHub Secrets'tan bilgileri güvenle alıyoruz
+CLIENT_ID = os.environ.get("BLOGGER_CLIENT_ID")
+CLIENT_SECRET = os.environ.get("BLOGGER_CLIENT_SECRET")
+REFRESH_TOKEN = os.environ.get("BLOGGER_REFRESH_TOKEN")
+BLOG_ID = os.environ.get("BLOGGER_BLOG_ID")
 
-RSS_FEEDS = ["https://techcrunch.com/feed/"]
-MEMORY_FILE = "yayinlanan_haberler.txt"
+def post_to_blogger():
+    # OAuth 2.0 kimlik bilgilerini oluşturuyoruz
+    creds = Credentials(
+        token=None,
+        refresh_token=REFRESH_TOKEN,
+        token_uri="https://oauth2.googleapis.com/token",
+        client_id=CLIENT_ID,
+        client_secret=CLIENT_SECRET,
+        scopes=["https://www.googleapis.com/auth/blogger"]
+    )
 
-yayinlananlar = set()
-if os.path.exists(MEMORY_FILE):
-    with open(MEMORY_FILE, "r", encoding="utf-8") as f:
-        yayinlananlar = set(f.read().splitlines())
+    # Blogger API servisini başlatıyoruz
+    service = build("blogger", "v3", credentials=creds)
 
-islenen_haber_sayisi = 0
-yeni_yayinlanacak_linkler = []
+    # TechCrunch RSS beslemesinden son yazıyı çekiyoruz
+    rss_url = "https://techcrunch.com/feed/"
+    feed = feedparser.parse(rss_url)
 
-for feed in RSS_FEEDS:
-    if islenen_haber_sayisi >= 1:
-        break
-    parsed_feed = feedparser.parse(feed)
-    for entry in parsed_feed.entries:
-        if islenen_haber_sayisi >= 1:
-            break
-        haber_linki = entry.link
-        if haber_linki not in yayinlananlar:
-            print(f"İşleniyor: {entry.title}")
-            try:
-                gorsel_url = ""
-                if hasattr(entry, 'media_content') and entry.media_content:
-                    gorsel_url = entry.media_content[0].get('url', '')
-                elif hasattr(entry, 'enclosures') and entry.enclosures:
-                    gorsel_url = entry.enclosures[0].get('href', '')
+    if not feed.entries:
+        print("RSS beslemesinden yazı bulunamadı.")
+        return
 
-                haber_icerigi = entry.summary if hasattr(entry, 'summary') else entry.title
-                gorsel_html = f"<img src='{gorsel_url}' style='width:100%; border-radius:8px; margin-bottom:15px;' /><br>" if gorsel_url else ""
-                html_icerik = f"{gorsel_html}<p>{haber_icerigi}</p><br><p><strong>Kaynak:</strong> <a href='{haber_linki}'>{entry.title}</a></p>"
+    latest_entry = feed.entries[0]
+    title = latest_entry.title
+    link = latest_entry.link
+    summary = latest_entry.get("summary", "")
 
-                # E-posta gönderimi
-                msg = MIMEMultipart()
-                msg['From'] = SENDER_EMAIL
-                msg['To'] = BLOGGER_EMAIL
-                msg['Subject'] = entry.title
-                msg.attach(MIMEText(html_icerik, 'html', 'utf-8'))
+    # Bloga gönderilecek HTML içeriği hazırlıyoruz
+    content = f"<p>{summary}</p><p><a href='{link}' target='_blank'>Haberi Kaynağından Oku</a></p>"
 
-                with smtplib.SMTP_SSL('smtp.gmail.com', 465) as server:
-                    server.login(SENDER_EMAIL, SENDER_PASSWORD)
-                    server.sendmail(SENDER_EMAIL, BLOGGER_EMAIL, msg.as_string())
+    post_body = {
+        "title": title,
+        "content": content
+    }
 
-                print("E-posta başarıyla gönderildi!")
-                yeni_yayinlanacak_linkler.append(haber_linki)
-                yayinlananlar.add(haber_linki)
-                islenen_haber_sayisi += 1
-            except Exception as e:
-                print(f"Hata: {e}")
+    try:
+        # Yazıyı Blogger API üzerinden bloga gönderiyoruz
+        request = service.posts().insert(blogId=BLOG_ID, body=post_body)
+        response = request.execute()
+        print(f"Yazı başarıyla yayınlandı! Başlık: {title}")
+    except Exception as e:
+        print(f"Yazı yayınlanırken hata oluştu: {e}")
 
-with open(MEMORY_FILE, "a", encoding="utf-8") as f:
-    for link in yeni_yayinlanacak_linkler:
-        f.write(link + "\n")
+if __name__ == "__main__":
+    post_to_blogger()
