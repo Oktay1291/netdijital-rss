@@ -53,7 +53,6 @@ for feed in RSS_FEEDS:
             print(f"İşleniyor: {entry.title}")
             
             try:
-                # Haberin kapak görselini RSS'ten yakalıyoruz
                 gorsel_url = ""
                 if hasattr(entry, 'media_content') and entry.media_content:
                     gorsel_url = entry.media_content[0].get('url', '')
@@ -62,7 +61,6 @@ for feed in RSS_FEEDS:
 
                 haber_icerigi = entry.summary if hasattr(entry, 'summary') else entry.title
                 
-                # Görseli en üste ekleyip, içeriği ve kaynak linkini HTML olarak düzenliyoruz
                 gorsel_html = f"<img src='{gorsel_url}' style='width:100%; border-radius:8px; margin-bottom:15px;' /><br>" if gorsel_url else ""
                 html_icerik = f"{gorsel_html}<p>{haber_icerigi}</p><br><p><strong>Kaynak:</strong> <a href='{haber_linki}'>{entry.title}</a></p>"
                 
