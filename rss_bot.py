@@ -3,12 +3,9 @@ import os
 import smtplib
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
-import urllib.request
-import json
 
 SENDER_EMAIL = os.environ.get("SENDER_EMAIL") 
 SENDER_PASSWORD = os.environ.get("SENDER_PASSWORD") 
-GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY")
 BLOGGER_EMAIL = "ktysarikaya.netdijital1291@blogger.com"
 
 RSS_FEEDS = [
@@ -24,34 +21,6 @@ if os.path.exists(MEMORY_FILE):
 
 islenen_haber_sayisi = 0
 yeni_yayinlanacak_linkler = []
-
-def ai_cevir(metin):
-    # Doğrudan model listesi sorgulamayan, en kararlı endpoint
-    url = f"https://generativelanguage.googleapis.com/v1beta/openai/chat/completions"
-    
-    prompt = f"Şu İngilizce haberi teknoloji blogum NetDijital için SEO uyumlu, profesyonel bir dille Türkçe'ye çevir ve özetle. Sadece <h2>, <p>, <strong> etiketleri kullanarak HTML formatında ver. Haber: {metin}"
-    
-    data = {
-        "model": "gemini-1.5-flash",
-        "messages": [{"role": "user", "content": prompt}]
-    }
-    
-    req = urllib.request.Request(
-        url, 
-        data=json.dumps(data).encode('utf-8'), 
-        headers={
-            'Content-Type': 'application/json',
-            'Authorization': f'Bearer {GEMINI_API_KEY}'
-        }
-    )
-    
-    try:
-        with urllib.request.urlopen(req) as response:
-            res_data = json.loads(response.read().decode('utf-8'))
-            return res_data['choices'][0]['message']['content'].replace("```html", "").replace("```", "").strip()
-    except Exception as e:
-        print(f"Çeviri atlandı, orijinal metin kullanılıyor. Hata: {e}")
-        return metin
 
 def send_email_to_blogger(title, content):
     msg = MIMEMultipart()
@@ -84,29 +53,25 @@ for feed in RSS_FEEDS:
             print(f"İşleniyor: {entry.title}")
             
             try:
+                # Haberin kapak görselini RSS'ten yakalıyoruz
                 gorsel_url = ""
                 if hasattr(entry, 'media_content') and entry.media_content:
                     gorsel_url = entry.media_content[0].get('url', '')
                 elif hasattr(entry, 'enclosures') and entry.enclosures:
                     gorsel_url = entry.enclosures[0].get('href', '')
 
-                tr_baslik = ai_cevir(f"Bu haber başlığını dikkat çekici ve akıcı bir Türkçe teknoloji haberi başlığına çevir: {entry.title}")
-                tr_baslik = tr_baslik.replace("<h2>", "").replace("</h2>", "").replace("<p>", "").replace("</p>", "").strip()
+                haber_icerigi = entry.summary if hasattr(entry, 'summary') else entry.title
                 
-                ham_icerik = entry.summary if hasattr(entry, 'summary') else entry.title
-                tr_icerik = ai_cevir(ham_icerik)
-
+                # Görseli en üste ekleyip, içeriği ve kaynak linkini HTML olarak düzenliyoruz
                 gorsel_html = f"<img src='{gorsel_url}' style='width:100%; border-radius:8px; margin-bottom:15px;' /><br>" if gorsel_url else ""
-                kaynak_html = f"<br><p><strong>Kaynak:</strong> <a href='{haber_linki}'>{entry.title}</a></p>"
+                html_icerik = f"{gorsel_html}<p>{haber_icerigi}</p><br><p><strong>Kaynak:</strong> <a href='{haber_linki}'>{entry.title}</a></p>"
                 
-                final_icerik = gorsel_html + tr_icerik + kaynak_html
-
-                send_email_to_blogger(tr_baslik, final_icerik)
+                send_email_to_blogger(entry.title, html_icerik)
                 
                 yeni_yayinlanacak_linkler.append(haber_linki)
                 yayinlananlar.add(haber_linki)
                 islenen_haber_sayisi += 1
-                print("Başarıyla Türkçe başlık, görsel ve içerik Blogger'a gönderildi!")
+                print("Başarıyla Blogger'a gönderildi!")
                 
             except Exception as e:
                 print(f"Hata oluştu: {e}")
