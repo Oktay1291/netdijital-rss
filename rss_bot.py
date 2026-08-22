@@ -26,22 +26,31 @@ islenen_haber_sayisi = 0
 yeni_yayinlanacak_linkler = []
 
 def ai_cevir(metin):
-    # En güncel ve kararlı endpoint yolu
-    url = f"https://generativelanguage.googleapis.com/v1/models/gemini-1.5-flash:generateContent?key={GEMINI_API_KEY}"
+    # Doğrudan model listesi sorgulamayan, en kararlı endpoint
+    url = f"https://generativelanguage.googleapis.com/v1beta/openai/chat/completions"
     
     prompt = f"Şu İngilizce haberi teknoloji blogum NetDijital için SEO uyumlu, profesyonel bir dille Türkçe'ye çevir ve özetle. Sadece <h2>, <p>, <strong> etiketleri kullanarak HTML formatında ver. Haber: {metin}"
     
     data = {
-        "contents": [{"parts": [{"text": prompt}]}]
+        "model": "gemini-1.5-flash",
+        "messages": [{"role": "user", "content": prompt}]
     }
     
-    req = urllib.request.Request(url, data=json.dumps(data).encode('utf-8'), headers={'Content-Type': 'application/json'})
+    req = urllib.request.Request(
+        url, 
+        data=json.dumps(data).encode('utf-8'), 
+        headers={
+            'Content-Type': 'application/json',
+            'Authorization': f'Bearer {GEMINI_API_KEY}'
+        }
+    )
+    
     try:
         with urllib.request.urlopen(req) as response:
             res_data = json.loads(response.read().decode('utf-8'))
-            return res_data['candidates'][0]['content']['parts'][0]['text'].replace("```html", "").replace("```", "").strip()
+            return res_data['choices'][0]['message']['content'].replace("```html", "").replace("```", "").strip()
     except Exception as e:
-        print(f"AI Çeviri Hatası: {e}")
+        print(f"Çeviri atlandı, orijinal metin kullanılıyor. Hata: {e}")
         return metin
 
 def send_email_to_blogger(title, content):
