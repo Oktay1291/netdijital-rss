@@ -1,14 +1,41 @@
-# Zamanlayıcıyı 30 dakikada bir çalışacak şekilde ayarla
+name: NetDijital Botu
+
 on:
   schedule:
     - cron: '*/30 * * * *'
+  workflow_dispatch:
 
-# ... (Python çalıştırma adımların) ...
+permissions:
+  contents: write
 
-      - name: Hafıza dosyasını Github'a kaydet (Commit)
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Repoyu Klonla
+        uses: actions/checkout@v3
+
+      - name: Python Kurulumu
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.x'
+
+      - name: Gerekli Kütüphaneleri Yükle
+        run: |
+          pip install feedparser google-generativeai
+
+      - name: Python Scriptini Çalıştır
+        env:
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          SENDER_EMAIL: ${{ secrets.SENDER_EMAIL }}
+          SENDER_PASSWORD: ${{ secrets.SENDER_PASSWORD }}
+        run: python rss_bot.py
+
+      - name: Hafıza Dosyasını Github'a Kaydet (Commit)
         run: |
           git config --global user.name 'github-actions[bot]'
           git config --global user.email 'github-actions[bot]@users.noreply.github.com'
           git add yayinlanan_haberler.txt
-          git commit -m "Otomatik Güncelleme: Yayınlanan haberler hafızaya eklendi" || echo "Değişiklik yok"
+          git commit -m "NetDijital Otomatik Güncelleme: Yeni haberler hafızaya alındı" || echo "Yeni haber bulunamadı, değişiklik yok"
           git push
