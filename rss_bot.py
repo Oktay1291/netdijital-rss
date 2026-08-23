@@ -15,7 +15,7 @@ GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY")
 if GEMINI_API_KEY:
   genai.configure(api_key=GEMINI_API_KEY)
 
-# Belirttiğin kaynaklar çıkarılmış temiz RSS havuzu
+# Temizlenmiş RSS havuzu
 RSS_SOURCES = [
     "https://techcrunch.com/feed/",
     "https://www.theverge.com/rss/index.xml",
@@ -39,21 +39,18 @@ def generate_seo_article_and_labels(title, summary):
   ve etiket üretir.
   """
   if not GEMINI_API_KEY:
-    return f"<p>{summary}</p>", ["TEKNOLOJİ", "HABER"]
+    return f"<p>{summary}</p>", ["Teknoloji", "Haber"]
 
+  # Baş harfleri büyük güncel ana kategoriler
   allowed_categories = [
-      "İNCELEME",
-      "TEKNOLOJİ",
-      "YAPAY ZEKA",
-      "OYUN",
-      "APPLE",
-      "ANDROID",
-      "MOBİL",
-      "PC",
-      "DONANIM",
-      "TELEVİZYON",
-      "AKILLI YAŞAM",
-      "OTOMOBİL",
+      "Yapay Zeka",
+      "Telefon",
+      "Bilgisayar",
+      "Teknoloji",
+      "Oyun",
+      "Akıllı Ev",
+      "Sinema",
+      "Otomobil",
   ]
 
   prompt = f"""
@@ -82,17 +79,17 @@ def generate_seo_article_and_labels(title, summary):
       parts = text.split("[ETIKETLER:")
       article_content = parts[0].strip()
       labels_part = parts[1].replace("]", "").strip()
-      # Etiketleri büyük harfe zorluyoruz
-      labels = [l.strip().upper() for l in labels_part.split(",") if l.strip()]
+      # Etiketlerin orijinal baş harf büyük formatını koruyoruz
+      labels = [l.strip() for l in labels_part.split(",") if l.strip()]
     else:
       article_content = text
-      labels = ["TEKNOLOJİ"]
+      labels = ["Teknoloji"]
 
     return article_content, labels[:10]
 
   except Exception as e:
     print(f"Gemini makale üretirken hata oluştu: {e}")
-    return f"<p>{summary}</p>", ["TEKNOLOJİ"]
+    return f"<p>{summary}</p>", ["Teknoloji"]
 
 
 def post_to_blogger():
@@ -130,7 +127,7 @@ def post_to_blogger():
 
   print(f"Kaynak: {used_source} | İşlenen Haber: {title}")
 
-  # Gemini ile 750-1200 kelimelik makale ve 10 büyük harfli SEO etiketi üretiyoruz
+  # Gemini ile 750-1200 kelimelik makale ve 10 SEO etiketi üretiyoruz
   article_html, labels = generate_seo_article_and_labels(title, summary)
   print(f"Seçilen Kategori ve Etiketler: {labels}")
 
