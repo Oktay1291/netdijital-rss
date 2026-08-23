@@ -50,7 +50,7 @@ def generate_seo_article_and_labels(title, summary):
   if not GEMINI_API_KEY:
     return f"<p>{summary}</p>", ["Teknoloji", "Haber"]
 
-  # Baş harfleri büyük güncel ana kategoriler
+  # Baş harfleri büyük güncel ana kategoriler (Donanım ve Bilim ve Uzay eklendi)
   allowed_categories = [
       "Yapay Zeka",
       "Telefon",
@@ -58,6 +58,8 @@ def generate_seo_article_and_labels(title, summary):
       "Teknoloji",
       "Oyun",
       "Akıllı Ev",
+      "Donanım",
+      "Bilim ve Uzay",
       "Sinema",
       "Otomobil",
   ]
@@ -71,7 +73,7 @@ def generate_seo_article_and_labels(title, summary):
     Lütfen şu kurallara kesinlikle uy:
     1. İÇERİK UZUNLUĞU: Kesinlikle 750 ile 1200 kelime arasında detaylı, doyurucu ve akıcı bir makale yaz. Konuyu yüzeysel geçme, derinlemesine açıkla.
     2. HTML FORMATI: Makaleyi HTML etiketleri kullanarak biçimlendir (örn: <h2> ve <h3> alt başlıklar, <p> paragraflar, <ul> ve <li> maddeler kullan).
-    3. KATEGORİ VE ETİKETLER: Şu ana kategorilerden SADECE BİR TANESİNİ seç ve bunu etiket listesinin ilk elemanı yap: {allowed_categories}
+    3. KATEGORİ VE ETİKETlER: Şu ana kategorilerden SADECE BİR TANESİNİ seç ve bunu etiket listesinin ilk elemanı yap: {allowed_categories}
     4. TOPLAM ETİKET: Ana kategori dahil olmak üzere, Google'da en çok aratılacak toplam 10 adet SEO uyumlu etiketi makalenin en sonunda tam olarak şu formatta ver:
     
     [ETIKETLER: Kategori, etiket2, etiket3, ..., etiket10]
