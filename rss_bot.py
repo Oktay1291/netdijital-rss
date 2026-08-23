@@ -1,6 +1,6 @@
 import os
-import google.generativeai as genai
 import feedparser
+import google.generativeai as genai
 from google.oauth2.credentials import Credentials
 from googleapiclient.discovery import build
 
@@ -21,31 +21,33 @@ def generate_labels_with_gemini(title, summary):
   if not GEMINI_API_KEY:
     return ["Teknoloji", "Haber"]  # API anahtarı yoksa yedek etiketler
 
-  allowed_categories = [
-      "İnceleme",
-      "Teknoloji",
-      "Yapay Zeka",
-      "Oyun",
-      "Apple",
-      "Android",
-      "Mobil",
+  # Blogger menüsündeki orijinal yazılışlarıyla eşleşen ana kategoriler
+allowed_categories = [
+      "İNCELEME",
+      "TEKNOLOJİ",
+      "YAPAY ZEKA",
+      "OYUN",
+      "APPLE",
+      "ANDROID",
+      "MOBİL",
       "PC",
-      "Donanım",
-      "Televizyon",
-      "Akıllı Yaşam",
-      "Otomobil",
+      "DONANIM",
+      "TELEVİZYON",
+      "AKILLI YAŞAM",
+      "OTOMOBİL",
   ]
+  
 
   prompt = f"""
     Aşağıdaki habere göre bir analiz yap:
-    1. Şu ana kategorilerden SADECE BİR TANESİNİ seç: {allowed_categories}
+    1. Şu ana kategorilerden SADECE BİR TANESİNİ seç ve listede nasıl yazılıysa birebir aynı formatla ilk sırada yaz: {allowed_categories}
     2. Bu haber için Google'da en çok aratılacak/SEO uyumlu, aralarından ana kategorinin de bulunduğu TOPLAM 10 ADET etiket (kelime veya kısa kelime grubu) belirle.
     
     Haber Başlığı: {title}
     Haber Özeti: {summary}
     
-    Lütfen yanıtı sadece aralarında virgül olacak şekilde 10 adet etiket olarak ver. İlk etiket kesinlikle seçtiğin ana kategori olsun. Başka hiçbir açıklama yazma.
-    Örnek format: Teknoloji, yapay zeka, telefon özellikleri, fiyatı, inceleme, ...
+    Lütfen yanıtı sadece aralarında virgül olacak şekilde 10 adet etiket olarak ver. İlk etiket kesinlikle yukarıdaki listeden seçtiğin ana kategori olsun. Başka hiçbir açıklama yazma.
+    Örnek format: Yapay Zeka, openai, yapay zeka gelişimi, teknoloji haberleri, ...
     """
 
   try:
