@@ -15,26 +15,19 @@ GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY")
 if GEMINI_API_KEY:
   genai.configure(api_key=GEMINI_API_KEY)
 
-# Senin eklediğin 20 farklı haber kaynağı (RSS havuzu)
+# Belirttiğin kaynaklar çıkarılmış temiz RSS havuzu
 RSS_SOURCES = [
     "https://techcrunch.com/feed/",
     "https://www.theverge.com/rss/index.xml",
     "https://www.engadget.com/rss.xml",
-    "https://feeds.feedburner.com/oreilly/radar/atom",
     "https://www.wired.com/feed/rss",
     "https://mashable.com/feed.rss",
-    "https://gizmodo.com/rss",
     "https://www.cnet.com/rss/news/",
     "https://thenextweb.com/feed",
-    "https://venturebeat.com/feed/",
     "https://www.digitaltrends.com/feed/",
     "https://rss.slashdot.org/Slashdot/slashdotMain",
-    "https://www.zdnet.com/rss.xml",
     "https://www.tomshardware.com/rss.xml",
     "https://www.anandtech.com/rss/",
-    "https://9to5mac.com/feed/",
-    "https://9to5google.com/feed/",
-    "https://androidcentral.com/rss.xml",
     "https://www.gsmarena.com/rss-news-rss.php",
     "https://www.bleepingcomputer.com/feed/",
 ]
@@ -116,7 +109,7 @@ def post_to_blogger():
   # Blogger API servisini başlatıyoruz
   service = build("blogger", "v3", credentials=creds)
 
-  # 20 kaynaklık havuzdan sırayla veya ilk geçerli olandan yazı çekiyoruz
+  # Kaynak havuzundan sırayla veya ilk geçerli olandan yazı çekiyoruz
   latest_entry = None
   used_source = ""
 
