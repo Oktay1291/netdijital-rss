@@ -16,13 +16,18 @@ if GEMINI_API_KEY:
   genai.configure(api_key=GEMINI_API_KEY)
 
 
-def generate_labels_with_gemini(title, summary):
-  """Gemini kullanarak haber için uygun ana kategori ve 10 SEO etiketi üretir."""
-  if not GEMINI_API_KEY:
-    return ["Teknoloji", "Haber"]  # API anahtarı yoksa yedek etiketler
+def generate_seo_article_and_labels(title, summary):
+  """Gemini kullanarak haberi 750-1200 kelimelik SEO makalesine dönüştürür
 
-  # Blogger menüsündeki orijinal yazılışlarıyla eşleşen ana kategoriler
-allowed_categories = [
+  ve etiket üretir.
+  """
+  if not GEMINI_API_KEY:
+    return (
+        f"<p>{summary}</p>",
+        ["Teknoloji", "Haber"],
+    )  # API anahtarı yoksa yedekler
+
+  allowed_categories = [
       "İNCELEME",
       "TEKNOLOJİ",
       "YAPAY ZEKA",
@@ -36,30 +41,44 @@ allowed_categories = [
       "AKILLI YAŞAM",
       "OTOMOBİL",
   ]
-  
 
   prompt = f"""
-    Aşağıdaki habere göre bir analiz yap:
-    1. Şu ana kategorilerden SADECE BİR TANESİNİ seç ve listede nasıl yazılıysa birebir aynı formatla ilk sırada yaz: {allowed_categories}
-    2. Bu haber için Google'da en çok aratılacak/SEO uyumlu, aralarından ana kategorinin de bulunduğu TOPLAM 10 ADET etiket (kelime veya kısa kelime grubu) belirle.
+    Aşağıdaki haber başlığını ve özetini temel alarak kapsamlı bir blog makalesi oluştur:
     
-    Haber Başlığı: {title}
-    Haber Özeti: {summary}
+    Orijinal Başlık: {title}
+    Orijinal Özet: {summary}
     
-    Lütfen yanıtı sadece aralarında virgül olacak şekilde 10 adet etiket olarak ver. İlk etiket kesinlikle yukarıdaki listeden seçtiğin ana kategori olsun. Başka hiçbir açıklama yazma.
-    Örnek format: Yapay Zeka, openai, yapay zeka gelişimi, teknoloji haberleri, ...
+    Lütfen şu kurallara kesinlikle uy:
+    1. İÇERİK UZUNLUĞU: Kesinlikle 750 ile 1200 kelime arasında detaylı, doyurucu ve akıcı bir makale yaz. Konuyu yüzeysel geçme, derinlemesine açıkla.
+    2. HTML FORMATI: Makaleyi HTML etiketleri kullanarak biçimlendir (örn: <h2> ve <h3> alt başlıklar, <p> paragraflar, <ul> ve <li> maddeler kullan).
+    3. KATEGORİ VE ETİKETLER: Şu ana kategorilerden SADECE BİR TANESİNİ seç ve bunu etiket listesinin ilk elemanı yap: {allowed_categories}
+    4. TOPLAM ETİKET: Ana kategori dahil olmak üzere, Google'da en çok aratılacak toplam 10 adet SEO uyumlu etiketi makalenin en sonunda tam olarak şu formatta ver:
+    
+    [ETIKETLER: Kategori, etiket2, etiket3, ..., etiket10]
+    
+    Başka hiçbir açıklama yapma, sadece HTML makaleyi ve en alttaki etiket formatını üret.
     """
 
   try:
     model = genai.GenerativeModel("gemini-1.5-flash")
     response = model.generate_content(prompt)
-    labels_text = response.text.strip()
-    # Virgülle ayrılmış etiketleri listeye çeviriyoruz ve boşlukları temizliyoruz
-    labels = [label.strip() for label in labels_text.split(",") if label.strip()]
-    return labels[:10]  # Garanti olması için ilk 10 etiketi alıyoruz
+    text = response.text.strip()
+
+    # Etiketleri ve makale içeriğini birbirinden ayırıyoruz
+    if "[ETIKETLER:" in text:
+      parts = text.split("[ETIKETLER:")
+      article_content = parts[0].strip()
+      labels_part = parts[1].replace("]", "").strip()
+      labels = [l.strip() for l in labels_part.split(",") if l.strip()]
+    else:
+      article_content = text
+      labels = ["TEKNOLOJİ"]
+
+    return article_content, labels[:10]
+
   except Exception as e:
-    print(f"Gemini etiket üretirken hata oluştu: {e}")
-    return ["Teknoloji"]
+    print(f"Gemini makale üretirken hata oluştu: {e}")
+    return f"<p>{summary}</p>", ["TEKNOLOJİ"]
 
 
 def post_to_blogger():
@@ -89,20 +108,24 @@ def post_to_blogger():
   link = latest_entry.link
   summary = latest_entry.get("summary", "")
 
-  # Gemini ile ana kategori dahil 10 SEO etiketi üretiyoruz
-  labels = generate_labels_with_gemini(title, summary)
+  # Gemini ile 750-1200 kelimelik makale ve 10 SEO etiketi üretiyoruz
+  print("Gemini makaleyi ve etiketleri hazırlıyor...")
+  article_html, labels = generate_seo_article_and_labels(title, summary)
   print(f"Seçilen Kategori ve Etiketler: {labels}")
 
-  # Bloga gönderilecek HTML içeriği hazırlıyoruz
-  content = f"<p>{summary}</p><p><a href='{link}' target='_blank'>Haberi Kaynağından Oku</a></p>"
+  # Bloga gönderilecek nihai HTML içeriği (Makale + Kaynak Linki)
+  content = (
+      f"{article_html}<p><br></p><p><a href='{link}' target='_blank'"
+      " rel='nofollow'>Haberi Kaynağından Oku</a></p>"
+  )
 
   post_body = {"title": title, "content": content, "labels": labels}
 
   try:
-    # Yazıyı Blogger API üzerinden etiketleriyle birlikte gönderiyoruz
+    # Yazıyı Blogger API üzerinden gönderiyoruz
     request = service.posts().insert(blogId=BLOG_ID, body=post_body)
     response = request.execute()
-    print(f"Yazı başarıyla yayınlandı! Başlık: {title}")
+    print(f"750-1200 kelimelik SEO uyumlu yazı başarıyla yayınlandı! {title}")
   except Exception as e:
     print(f"Yazı yayınlanırken hata oluştu: {e}")
 
