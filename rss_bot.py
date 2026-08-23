@@ -15,6 +15,30 @@ GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY")
 if GEMINI_API_KEY:
   genai.configure(api_key=GEMINI_API_KEY)
 
+# Senin eklediğin 20 farklı haber kaynağı (RSS havuzu)
+RSS_SOURCES = [
+    "https://techcrunch.com/feed/",
+    "https://www.theverge.com/rss/index.xml",
+    "https://www.engadget.com/rss.xml",
+    "https://feeds.feedburner.com/oreilly/radar/atom",
+    "https://www.wired.com/feed/rss",
+    "https://mashable.com/feed.rss",
+    "https://gizmodo.com/rss",
+    "https://www.cnet.com/rss/news/",
+    "https://thenextweb.com/feed",
+    "https://venturebeat.com/feed/",
+    "https://www.digitaltrends.com/feed/",
+    "https://rss.slashdot.org/Slashdot/slashdotMain",
+    "https://www.zdnet.com/rss.xml",
+    "https://www.tomshardware.com/rss.xml",
+    "https://www.anandtech.com/rss/",
+    "https://9to5mac.com/feed/",
+    "https://9to5google.com/feed/",
+    "https://androidcentral.com/rss.xml",
+    "https://www.gsmarena.com/rss-news-rss.php",
+    "https://www.bleepingcomputer.com/feed/",
+]
+
 
 def generate_seo_article_and_labels(title, summary):
   """Gemini kullanarak haberi 750-1200 kelimelik SEO makalesine dönüştürür
@@ -22,10 +46,7 @@ def generate_seo_article_and_labels(title, summary):
   ve etiket üretir.
   """
   if not GEMINI_API_KEY:
-    return (
-        f"<p>{summary}</p>",
-        ["Teknoloji", "Haber"],
-    )  # API anahtarı yoksa yedekler
+    return f"<p>{summary}</p>", ["TEKNOLOJİ", "HABER"]
 
   allowed_categories = [
       "İNCELEME",
@@ -64,12 +85,12 @@ def generate_seo_article_and_labels(title, summary):
     response = model.generate_content(prompt)
     text = response.text.strip()
 
-    # Etiketleri ve makale içeriğini birbirinden ayırıyoruz
     if "[ETIKETLER:" in text:
       parts = text.split("[ETIKETLER:")
       article_content = parts[0].strip()
       labels_part = parts[1].replace("]", "").strip()
-      labels = [l.strip() for l in labels_part.split(",") if l.strip()]
+      # Etiketleri büyük harfe zorluyoruz
+      labels = [l.strip().upper() for l in labels_part.split(",") if l.strip()]
     else:
       article_content = text
       labels = ["TEKNOLOJİ"]
@@ -95,25 +116,31 @@ def post_to_blogger():
   # Blogger API servisini başlatıyoruz
   service = build("blogger", "v3", credentials=creds)
 
-  # TechCrunch RSS beslemesinden son yazıyı çekiyoruz
-  rss_url = "https://techcrunch.com/feed/"
-  feed = feedparser.parse(rss_url)
+  # 20 kaynaklık havuzdan sırayla veya ilk geçerli olandan yazı çekiyoruz
+  latest_entry = None
+  used_source = ""
 
-  if not feed.entries:
-    print("RSS beslemesinden yazı bulunamadı.")
+  for rss_url in RSS_SOURCES:
+    feed = feedparser.parse(rss_url)
+    if feed.entries:
+      latest_entry = feed.entries[0]
+      used_source = rss_url
+      break  # Aktif bir yazı bulduğumuzda döngüden çıkıyoruz
+
+  if not latest_entry:
+    print("Hiçbir RSS beslemesinden yazı bulunamadı.")
     return
 
-  latest_entry = feed.entries[0]
   title = latest_entry.title
   link = latest_entry.link
   summary = latest_entry.get("summary", "")
 
-  # Gemini ile 750-1200 kelimelik makale ve 10 SEO etiketi üretiyoruz
-  print("Gemini makaleyi ve etiketleri hazırlıyor...")
+  print(f"Kaynak: {used_source} | İşlenen Haber: {title}")
+
+  # Gemini ile 750-1200 kelimelik makale ve 10 büyük harfli SEO etiketi üretiyoruz
   article_html, labels = generate_seo_article_and_labels(title, summary)
   print(f"Seçilen Kategori ve Etiketler: {labels}")
 
-  # Bloga gönderilecek nihai HTML içeriği (Makale + Kaynak Linki)
   content = (
       f"{article_html}<p><br></p><p><a href='{link}' target='_blank'"
       " rel='nofollow'>Haberi Kaynağından Oku</a></p>"
@@ -122,7 +149,6 @@ def post_to_blogger():
   post_body = {"title": title, "content": content, "labels": labels}
 
   try:
-    # Yazıyı Blogger API üzerinden gönderiyoruz
     request = service.posts().insert(blogId=BLOG_ID, body=post_body)
     response = request.execute()
     print(f"750-1200 kelimelik SEO uyumlu yazı başarıyla yayınlandı! {title}")
