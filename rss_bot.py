@@ -15,8 +15,9 @@ GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY")
 if GEMINI_API_KEY:
   genai.configure(api_key=GEMINI_API_KEY)
 
-# Temizlenmiş RSS havuzu
+# Teknoloji, Sinema ve Otomobil kaynaklarının bulunduğu zenginleştirilmiş RSS havuzu
 RSS_SOURCES = [
+    # --- Genel Teknoloji Kaynakları ---
     "https://techcrunch.com/feed/",
     "https://www.theverge.com/rss/index.xml",
     "https://www.engadget.com/rss.xml",
@@ -30,6 +31,14 @@ RSS_SOURCES = [
     "https://www.anandtech.com/rss/",
     "https://www.gsmarena.com/rss-news-rss.php",
     "https://www.bleepingcomputer.com/feed/",
+    # --- Sinema Kaynakları ---
+    "https://www.indiewire.com/feed/",
+    "https://screenrant.com/feed/",
+    "https://collider.com/feed/",
+    # --- Otomobil Kaynakları ---
+    "https://www.caranddriver.com/rss/all.xml",
+    "https://www.motortrend.com/feed/",
+    "https://jalopnik.com/rss",
 ]
 
 
