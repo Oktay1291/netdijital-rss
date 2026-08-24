@@ -29,4 +29,6 @@ jobs:
         BLOGGER_CLIENT_SECRET: ${{ secrets.BLOGGER_CLIENT_SECRET }}
         BLOGGER_REFRESH_TOKEN: ${{ secrets.BLOGGER_REFRESH_TOKEN }}
         BLOGGER_BLOG_ID: ${{ secrets.BLOGGER_BLOG_ID }}
+     - name: Install dependencies
+  run: pip install google-generativeai requests feedparser
       run: python rss_bot.py
