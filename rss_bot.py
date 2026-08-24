@@ -38,8 +38,7 @@ RSS_SOURCES = [
     # --- Otomobil Kaynakları ---
     "https://www.caranddriver.com/rss/all.xml",
     "https://www.motortrend.com/feed/",
-    "https://jalopnik.com/rss",
-]
+    ]
 
 
 def generate_seo_article_and_labels(title, summary):
