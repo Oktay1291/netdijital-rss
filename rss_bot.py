@@ -1,23 +1,25 @@
 import os
 import feedparser
 import google.generativeai as genai
+from google.auth.transport.requests import Request
 from google.oauth2.credentials import Credentials
 from googleapiclient.discovery import build
 
-# GitHub Secrets'tan bilgileri güvenle alıyoruz
-CLIENT_ID = os.environ.get("BLOGGER_CLIENT_ID")
-CLIENT_SECRET = os.environ.get("BLOGGER_CLIENT_SECRET")
-REFRESH_TOKEN = os.environ.get("BLOGGER_REFRESH_TOKEN")
+# GitHub Secrets'tan sadece gerekli olanlar kalıyor
 BLOG_ID = os.environ.get("BLOGGER_BLOG_ID")
 GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY")
+
+# Eğer eski OAuth secret'ları GitHub'da kalmışsa hata vermesin diye opsiyonel okuyoruz
+CLIENT_ID = os.environ.get("BLOGGER_CLIENT_ID", "")
+CLIENT_SECRET = os.environ.get("BLOGGER_CLIENT_SECRET", "")
+REFRESH_TOKEN = os.environ.get("BLOGGER_REFRESH_TOKEN", "")
 
 # Gemini API'yi yapılandırıyoruz
 if GEMINI_API_KEY:
     genai.configure(api_key=GEMINI_API_KEY)
 
-# Teknoloji, Sinema ve Otomobil kaynaklarının bulunduğu zenginleştirilmiş RSS havuzu
+# Teknoloji, Sinema ve Otomobil kaynaklarının bulunduğu RSS havuzu
 RSS_SOURCES = [
-    # --- Genel Teknoloji Kaynakları ---
     "https://techcrunch.com/feed/",
     "https://www.theverge.com/rss/index.xml",
     "https://www.engadget.com/rss.xml",
@@ -31,11 +33,9 @@ RSS_SOURCES = [
     "https://www.anandtech.com/rss/",
     "https://www.gsmarena.com/rss-news-rss.php",
     "https://www.bleepingcomputer.com/feed/",
-    # --- Sinema Kaynakları ---
     "https://www.indiewire.com/feed/",
     "https://screenrant.com/feed/",
     "https://collider.com/feed/",
-    # --- Otomobil Kaynakları ---
     "https://www.caranddriver.com/rss/all.xml",
     "https://www.motortrend.com/feed/",
     "https://jalopnik.com/rss",
@@ -50,7 +50,6 @@ def generate_seo_article_and_labels(title, summary):
     if not GEMINI_API_KEY:
         return f"<p>{summary}</p>", ["Teknoloji", "Haber"]
 
-    # Baş harfleri büyük güncel ana kategoriler
     allowed_categories = [
         "Yapay Zeka",
         "Telefon",
@@ -103,7 +102,11 @@ def generate_seo_article_and_labels(title, summary):
 
 
 def post_to_blogger():
-    # OAuth 2.0 kimlik bilgilerini oluşturuyoruz
+    # Güvenli ve otomatik yenilenen kimlik doğrulama katmanı
+    if not REFRESH_TOKEN or not CLIENT_ID or not CLIENT_SECRET:
+        print("HATA: Gerekli kimlik doğrulama secret değişkenleri eksik.")
+        return
+
     creds = Credentials(
         token=None,
         refresh_token=REFRESH_TOKEN,
@@ -113,10 +116,12 @@ def post_to_blogger():
         scopes=["https://www.googleapis.com/auth/blogger"],
     )
 
-    # Blogger API servisini başlatıyoruz
+    # Token süresi dolduysa otomatik tazeleme mekanizması
+    if creds and creds.expired and creds.refresh_token:
+        creds.refresh(Request())
+
     service = build("blogger", "v3", credentials=creds)
 
-    # Kaynak havuzundan sırayla veya ilk geçerli olandan yazı çekiyoruz
     latest_entry = None
     used_source = ""
 
@@ -125,7 +130,7 @@ def post_to_blogger():
         if feed.entries:
             latest_entry = feed.entries[0]
             used_source = rss_url
-            break  # Aktif bir yazı bulduğumuzda döngüden çıkıyoruz
+            break
 
     if not latest_entry:
         print("Hiçbir RSS beslemesinden yazı bulunamadı.")
@@ -137,7 +142,6 @@ def post_to_blogger():
 
     print(f"Kaynak: {used_source} | İşlenen Haber: {title}")
 
-    # Gemini ile 750-1200 kelimelik makale ve 10 SEO etiketi üretiyoruz
     article_html, labels = generate_seo_article_and_labels(title, summary)
     print(f"Seçilen Kategori ve Etiketler: {labels}")
 
