@@ -1,31 +1,65 @@
 name: Run RSS Bot
 
+
+
 on:
+
+  schedule:
+
+    - cron: '0 */6 * * *'
+
   workflow_dispatch:
 
+
+
 jobs:
+
   build:
+
     runs-on: ubuntu-latest
 
+
+
     steps:
+
     - name: Depoyu Kopyala (Checkout)
+
       uses: actions/checkout@v3
 
+
+
     - name: Python Kurulumu
+
       uses: actions/setup-python@v4
+
       with:
+
         python-version: '3.10'
 
+
+
     - name: Kütüphaneleri Yükle
+
       run: |
+
         python -m pip install --upgrade pip
+
         pip install feedparser google-auth google-auth-oauthlib google-auth-httplib2 google-api-python-client google-generativeai requests
 
+
+
     - name: Python Scriptini Çalıştır
+
       env:
+
         BLOGGER_CLIENT_ID: ${{ secrets.BLOGGER_CLIENT_ID }}
+
         BLOGGER_CLIENT_SECRET: ${{ secrets.BLOGGER_CLIENT_SECRET }}
+
         BLOGGER_REFRESH_TOKEN: ${{ secrets.BLOGGER_REFRESH_TOKEN }}
+
         BLOGGER_BLOG_ID: ${{ secrets.BLOGGER_BLOG_ID }}
+
         FB_PAGE_ACCESS_TOKEN: ${{ secrets.FB_PAGE_ACCESS_TOKEN }}
-      run: python rss_bot.py
+
+      run: python rss_bot.py 
