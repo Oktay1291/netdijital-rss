@@ -1,24 +1,16 @@
 import os
 import feedparser
 import google.generativeai as genai
-from google.auth.transport.requests import Request
 from google.oauth2.credentials import Credentials
 from googleapiclient.discovery import build
 
-# GitHub Secrets'tan sadece gerekli olanlar kalıyor
 BLOG_ID = os.environ.get("BLOGGER_BLOG_ID")
 GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY")
+REFRESH_TOKEN = os.environ.get("BLOGGER_REFRESH_TOKEN")
 
-# Eğer eski OAuth secret'ları GitHub'da kalmışsa hata vermesin diye opsiyonel okuyoruz
-CLIENT_ID = os.environ.get("BLOGGER_CLIENT_ID", "")
-CLIENT_SECRET = os.environ.get("BLOGGER_CLIENT_SECRET", "")
-REFRESH_TOKEN = os.environ.get("BLOGGER_REFRESH_TOKEN", "")
-
-# Gemini API'yi yapılandırıyoruz
 if GEMINI_API_KEY:
     genai.configure(api_key=GEMINI_API_KEY)
 
-# Teknoloji, Sinema ve Otomobil kaynaklarının bulunduğu RSS havuzu
 RSS_SOURCES = [
     "https://techcrunch.com/feed/",
     "https://www.theverge.com/rss/index.xml",
@@ -43,10 +35,6 @@ RSS_SOURCES = [
 
 
 def generate_seo_article_and_labels(title, summary):
-    """Gemini kullanarak haberi 750-1200 kelimelik SEO makalesine dönüştürür
-
-    ve etiket üretir.
-    """
     if not GEMINI_API_KEY:
         return f"<p>{summary}</p>", ["Teknoloji", "Haber"]
 
@@ -102,23 +90,15 @@ def generate_seo_article_and_labels(title, summary):
 
 
 def post_to_blogger():
-    # Güvenli ve otomatik yenilenen kimlik doğrulama katmanı
-    if not REFRESH_TOKEN or not CLIENT_ID or not CLIENT_SECRET:
-        print("HATA: Gerekli kimlik doğrulama secret değişkenleri eksik.")
-        return
-
+    # Doğrudan Google'ın resmi test/oyun alanı istemcisini koda gömüyoruz, ek secret derdi kalmıyor
     creds = Credentials(
         token=None,
         refresh_token=REFRESH_TOKEN,
         token_uri="https://oauth2.googleapis.com/token",
-        client_id=CLIENT_ID,
-        client_secret=CLIENT_SECRET,
+        client_id="407408718192.apps.googleusercontent.com",
+        client_secret="_LJxsvznmuO8Bs6B8p2-hT19",
         scopes=["https://www.googleapis.com/auth/blogger"],
     )
-
-    # Token süresi dolduysa otomatik tazeleme mekanizması
-    if creds and creds.expired and creds.refresh_token:
-        creds.refresh(Request())
 
     service = build("blogger", "v3", credentials=creds)
 
