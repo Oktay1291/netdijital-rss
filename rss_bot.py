@@ -3,13 +3,18 @@ import feedparser
 import google.generativeai as genai
 from google.oauth2.credentials import Credentials
 from googleapiclient.discovery import build
+import requests
 
 BLOG_ID = os.environ.get("BLOGGER_BLOG_ID")
 GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY")
 REFRESH_TOKEN = os.environ.get("BLOGGER_REFRESH_TOKEN")
+FB_PAGE_ACCESS_TOKEN = os.environ.get("FB_PAGE_ACCESS_TOKEN")
+FB_PAGE_ID = os.environ.get(
+    "FB_PAGE_ID"
+)  # GitHub Secrets'a bunu da eklemen gerekecek
 
 if GEMINI_API_KEY:
-    genai.configure(api_key=GEMINI_API_KEY)
+  genai.configure(api_key=GEMINI_API_KEY)
 
 RSS_SOURCES = [
     "https://techcrunch.com/feed/",
@@ -35,23 +40,23 @@ RSS_SOURCES = [
 
 
 def generate_seo_article_and_labels(title, summary):
-    if not GEMINI_API_KEY:
-        return f"<p>{summary}</p>", ["Teknoloji", "Haber"]
+  if not GEMINI_API_KEY:
+    return f"<p>{summary}</p>", ["Teknoloji", "Haber"]
 
-    allowed_categories = [
-        "Yapay Zeka",
-        "Telefon",
-        "Bilgisayar",
-        "Teknoloji",
-        "Oyun",
-        "Akıllı Ev",
-        "Donanım",
-        "Bilim ve Uzay",
-        "Sinema",
-        "Otomobil",
-    ]
+  allowed_categories = [
+      "Yapay Zeka",
+      "Telefon",
+      "Bilgisayar",
+      "Teknoloji",
+      "Oyun",
+      "Akıllı Ev",
+      "Donanım",
+      "Bilim ve Uzay",
+      "Sinema",
+      "Otomobil",
+  ]
 
-    prompt = f"""
+  prompt = f"""
     Aşağıdaki haber başlığını ve özetini temel alarak kapsamlı bir blog makalesi oluştur:
      
     Orijinal Başlık: {title}
@@ -68,77 +73,105 @@ def generate_seo_article_and_labels(title, summary):
     Başka hiçbir açıklama yapma, sadece HTML makaleyi ve en alttaki etiket formatını üret.
     """
 
-    try:
-        model = genai.GenerativeModel("gemini-1.5-flash")
-        response = model.generate_content(prompt)
-        text = response.text.strip()
+  try:
+    model = genai.GenerativeModel("gemini-1.5-flash")
+    response = model.generate_content(prompt)
+    text = response.text.strip()
 
-        if "[ETIKETLER:" in text:
-            parts = text.split("[ETIKETLER:")
-            article_content = parts[0].strip()
-            labels_part = parts[1].replace("]", "").strip()
-            labels = [l.strip() for l in labels_part.split(",") if l.strip()]
-        else:
-            article_content = text
-            labels = ["Teknoloji"]
+    if "[ETIKETLER:" in text:
+      parts = text.split("[ETIKETLER:")
+      article_content = parts[0].strip()
+      labels_part = parts[1].replace("]", "").strip()
+      labels = [l.strip() for l in labels_part.split(",") if l.strip()]
+    else:
+      article_content = text
+      labels = ["Teknoloji"]
 
-        return article_content, labels[:10]
+    return article_content, labels[:10]
 
-    except Exception as e:
-        print(f"Gemini makale üretirken hata oluştu: {e}")
-        return f"<p>{summary}</p>", ["Teknoloji"]
+  except Exception as e:
+    print(f"Gemini makale üretirken hata oluştu: {e}")
+    return f"<p>{summary}</p>", ["Teknoloji"]
+
+
+def post_to_facebook(title, post_url):
+  """Blogger'da yayınlanan yazıyı Facebook sayfasına otomatik gönderir"""
+  if not FB_PAGE_ACCESS_TOKEN or not FB_PAGE_ID:
+    print("Facebook token veya sayfa ID eksik, sosyal medya paylaşımı atlanıyor.")
+    return
+
+  url = f"https://graph.facebook.com/{FB_PAGE_ID}/feed"
+  payload = {
+      "message": f"Yeni Makale: {title}\n\n{post_url}",
+      "access_token": FB_PAGE_ACCESS_TOKEN,
+  }
+
+  try:
+    response = requests.post(url, data=payload)
+    result = response.json()
+    if "id" in result:
+      print("Yazı Facebook sayfasında başarıyla paylaşıldı!")
+    else:
+      print(f"Facebook paylaşım hatası: {result}")
+  except Exception as e:
+    print(f"Facebook istek hatası: {e}")
 
 
 def post_to_blogger():
-    # Doğrudan Google'ın resmi test/oyun alanı istemcisini koda gömüyoruz, ek secret derdi kalmıyor
-    creds = Credentials(
-        token=None,
-        refresh_token=REFRESH_TOKEN,
-        token_uri="https://oauth2.googleapis.com/token",
-        client_id="407408718192.apps.googleusercontent.com",
-        client_secret="_LJxsvznmuO8Bs6B8p2-hT19",
-        scopes=["https://www.googleapis.com/auth/blogger"],
-    )
+  creds = Credentials(
+      token=None,
+      refresh_token=REFRESH_TOKEN,
+      token_uri="https://oauth2.googleapis.com/token",
+      client_id="407408718192.apps.googleusercontent.com",
+      client_secret="_LJxsvznmuO8Bs6B8p2-hT19",
+      scopes=["https://www.googleapis.com/auth/blogger"],
+  )
 
-    service = build("blogger", "v3", credentials=creds)
+  service = build("blogger", "v3", credentials=creds)
 
-    latest_entry = None
-    used_source = ""
+  latest_entry = None
+  used_source = ""
 
-    for rss_url in RSS_SOURCES:
-        feed = feedparser.parse(rss_url)
-        if feed.entries:
-            latest_entry = feed.entries[0]
-            used_source = rss_url
-            break
+  for rss_url in RSS_SOURCES:
+    feed = feedparser.parse(rss_url)
+    if feed.entries:
+      latest_entry = feed.entries[0]
+      used_source = rss_url
+      break
 
-    if not latest_entry:
-        print("Hiçbir RSS beslemesinden yazı bulunamadı.")
-        return
+  if not latest_entry:
+    print("Hiçbir RSS beslemesinden yazı bulunamadı.")
+    return
 
-    title = latest_entry.title
-    link = latest_entry.link
-    summary = latest_entry.get("summary", "")
+  title = latest_entry.title
+  link = latest_entry.link
+  summary = latest_entry.get("summary", "")
 
-    print(f"Kaynak: {used_source} | İşlenen Haber: {title}")
+  print(f"Kaynak: {used_source} | İşlenen Haber: {title}")
 
-    article_html, labels = generate_seo_article_and_labels(title, summary)
-    print(f"Seçilen Kategori ve Etiketler: {labels}")
+  article_html, labels = generate_seo_article_and_labels(title, summary)
+  print(f"Seçilen Kategori ve Etiketler: {labels}")
 
-    content = (
-        f"{article_html}<p><br></p><p><a href='{link}' target='_blank'"
-        " rel='nofollow'>Haberi Kaynağından Oku</a></p>"
-    )
+  content = (
+      f"{article_html}<p><br></p><p><a href='{link}' target='_blank'"
+      " rel='nofollow'>Haberi Kaynağından Oku</a></p>"
+  )
 
-    post_body = {"title": title, "content": content, "labels": labels}
+  post_body = {"title": title, "content": content, "labels": labels}
 
-    try:
-        request = service.posts().insert(blogId=BLOG_ID, body=post_body)
-        response = request.execute()
-        print(f"750-1200 kelimelik SEO uyumlu yazı başarıyla yayınlandı! {title}")
-    except Exception as e:
-        print(f"Yazı yayınlanırken hata oluştu: {e}")
+  try:
+    request = service.posts().insert(blogId=BLOG_ID, body=post_body)
+    response = request.execute()
+    print(f"750-1200 kelimelik SEO uyumlu yazı başarıyla yayınlandı! {title}")
+
+    # Yayınlanan yazının Blogger linkini alıp Facebook'ta paylaşıyoruz
+    post_url = response.get("url")
+    if post_url:
+      post_to_facebook(title, post_url)
+
+  except Exception as e:
+    print(f"Yazı yayınlanırken hata oluştu: {e}")
 
 
 if __name__ == "__main__":
-    post_to_blogger()
+  post_to_blogger()
