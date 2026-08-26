@@ -8,10 +8,10 @@ import requests
 BLOG_ID = os.environ.get("BLOGGER_BLOG_ID")
 GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY")
 REFRESH_TOKEN = os.environ.get("BLOGGER_REFRESH_TOKEN")
+CLIENT_ID = os.environ.get("BLOGGER_CLIENT_ID")
+CLIENT_SECRET = os.environ.get("BLOGGER_CLIENT_SECRET")
 FB_PAGE_ACCESS_TOKEN = os.environ.get("FB_PAGE_ACCESS_TOKEN")
-FB_PAGE_ID = os.environ.get(
-    "FB_PAGE_ID"
-)  # GitHub Secrets'a bunu da eklemen gerekecek
+FB_PAGE_ID = os.environ.get("FB_PAGE_ID")
 
 if GEMINI_API_KEY:
   genai.configure(api_key=GEMINI_API_KEY)
@@ -122,8 +122,8 @@ def post_to_blogger():
       token=None,
       refresh_token=REFRESH_TOKEN,
       token_uri="https://oauth2.googleapis.com/token",
-      client_id="407408718192.apps.googleusercontent.com",
-      client_secret="_LJxsvznmuO8Bs6B8p2-hT19",
+      client_id=CLIENT_ID,
+      client_secret=CLIENT_SECRET,
       scopes=["https://www.googleapis.com/auth/blogger"],
   )
 
@@ -164,7 +164,6 @@ def post_to_blogger():
     response = request.execute()
     print(f"750-1200 kelimelik SEO uyumlu yazı başarıyla yayınlandı! {title}")
 
-    # Yayınlanan yazının Blogger linkini alıp Facebook'ta paylaşıyoruz
     post_url = response.get("url")
     if post_url:
       post_to_facebook(title, post_url)
