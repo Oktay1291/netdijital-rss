@@ -28,4 +28,5 @@ jobs:
         BLOGGER_REFRESH_TOKEN: ${{ secrets.BLOGGER_REFRESH_TOKEN }}
         BLOGGER_BLOG_ID: ${{ secrets.BLOGGER_BLOG_ID }}
         FB_PAGE_ACCESS_TOKEN: ${{ secrets.FB_PAGE_ACCESS_TOKEN }}
+        FB_PAGE_ID: ${{ secrets.FB_PAGE_ID }}
       run: python rss_bot.py
