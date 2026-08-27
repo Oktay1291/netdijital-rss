@@ -7,7 +7,7 @@ import requests
 
 from urllib.parse import urljoin
 
-from google import genai
+from google import genaigemini-1.5-flash
 
 from google.oauth2.credentials import Credentials
 from google.auth.transport.requests import Request
@@ -38,7 +38,7 @@ HAFIZA_DOSYASI = "yayinlanan_haberler.txt"
 
 
 # Gemini modeli
-GEMINI_MODEL = "gemini-1.5-flash"
+GEMINI_MODEL = "gemini-2.5-flash"
 
 
 # Haberler arasında bekleme
