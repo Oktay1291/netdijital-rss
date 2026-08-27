@@ -29,7 +29,7 @@ MAX_HABER = 3
 HAFIZA_DOSYASI = "yayinlanan_haberler.txt"
 
 # Gemini modeli
-GEMINI_MODEL = "gemini-2.5-flash"
+GEMINI_MODEL = "gemini-3.6-flash"
 
 # Haberler arasında bekleme
 BEKLEME_SURESI = 15
