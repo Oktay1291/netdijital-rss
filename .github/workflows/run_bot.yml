@@ -1,75 +1,37 @@
-name: Run RSS Blogger Bot
+name: NetDijital RSS Bot
 
 on:
-  workflow_dispatch:
-
   schedule:
-    - cron: '0 */6 * * *'
+    - cron: '0 */3 * * *' # Her 3 saatte bir çalışır
+  workflow_dispatch:      # Manuel çalıştırma butonu
 
+permissions:
+  contents: write         # Commit atabilmek için yetki (403 engelini önler)
 
 jobs:
-
   build:
-
     runs-on: ubuntu-latest
-
     steps:
-
-      # ======================================================
-      # REPOSITORY
-      # ======================================================
-
-      - name: Checkout repository
+      - name: Repoyu Kopyala
         uses: actions/checkout@v4
 
-
-      # ======================================================
-      # PYTHON
-      # ======================================================
-
-      - name: Set up Python
+      - name: Python Kur
         uses: actions/setup-python@v5
         with:
-          python-version: '3.11'
-          cache: 'pip'
+          python-version: '3.10'
 
-
-      # ======================================================
-      # GEREKLİ KÜTÜPHANELER
-      # ======================================================
-
-      - name: Install dependencies
+      - name: Gerekli Kütüphaneleri Yükle
         run: |
-
           python -m pip install --upgrade pip
+          pip install -r requirements.txt
 
-          pip install \
-            feedparser \
-            requests \
-            google-genai \
-            google-auth \
-            google-auth-oauthlib \
-            google-api-python-client
+      - name: Botu Çalıştır
+        run: python rss_bot.py
 
-
-      # ======================================================
-      # RSS BLOGGER BOT
-      # ======================================================
-
-      - name: Run RSS Blogger Bot
-
-        env:
-
-          BLOGGER_BLOG_ID: ${{ secrets.BLOGGER_BLOG_ID }}
-
-          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
-
-          BLOGGER_REFRESH_TOKEN: ${{ secrets.BLOGGER_REFRESH_TOKEN }}
-
-          BLOGGER_CLIENT_ID: ${{ secrets.BLOGGER_CLIENT_ID }}
-
-          BLOGGER_CLIENT_SECRET: ${{ secrets.BLOGGER_CLIENT_SECRET }}
-
+      - name: Değişiklikleri GitHub'a Kaydet
         run: |
-
-          python rss_bot.py
+          git config --global user.name "github-actions[bot]"
+          git config --global user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add yayinlanan_haberler.txt
+          git diff --staged --quiet || git commit -m "NetDijital Otomatik Güncelleme: Yeni haberler eklendi"
+          git push
