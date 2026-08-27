@@ -38,7 +38,7 @@ HAFIZA_DOSYASI = "yayinlanan_haberler.txt"
 
 
 # Gemini modeli
-GEMINI_MODEL = "gemini-3.6-flash"
+GEMINI_MODEL = "gemini-1.5-flash"
 
 
 # Haberler arasında bekleme
