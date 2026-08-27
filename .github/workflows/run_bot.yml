@@ -2,11 +2,11 @@ name: NetDijital RSS Bot
 
 on:
   schedule:
-    - cron: '0 */3 * * *' # Her 3 saatte bir çalışır
-  workflow_dispatch:      # Manuel çalıştırma butonu
+    - cron: '0 */3 * * *'
+  workflow_dispatch:
 
 permissions:
-  contents: write         # Commit atabilmek için yetki (403 engelini önler)
+  contents: write
 
 jobs:
   build:
@@ -26,6 +26,12 @@ jobs:
           pip install -r requirements.txt
 
       - name: Botu Çalıştır
+        env:
+          BLOGGER_BLOG_ID: ${{ secrets.BLOGGER_BLOG_ID }}
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          BLOGGER_REFRESH_TOKEN: ${{ secrets.BLOGGER_REFRESH_TOKEN }}
+          BLOGGER_CLIENT_ID: ${{ secrets.BLOGGER_CLIENT_ID }}
+          BLOGGER_CLIENT_SECRET: ${{ secrets.BLOGGER_CLIENT_SECRET }}
         run: python rss_bot.py
 
       - name: Değişiklikleri GitHub'a Kaydet
