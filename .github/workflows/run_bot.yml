@@ -2,8 +2,8 @@ name: NetDijital RSS Bot
 
 on:
   schedule:
-    # Türkiye saati ile sabah 06:00 - gece 00:00 arası her saat başı çalışır.
-    # (UTC saatine göre 03:00 ile 21:00 arasıdır)
+     Türkiye saati ile sabah 06:00 - gece 00:00 arası her saat başı çalışır.
+     (UTC saatine göre 03:00 ile 21:00 arasıdır)
     - cron: '0 3-21 * * *'
   workflow_dispatch:      # İstediğin zaman elle test edebilmen için bu kalsın
 
