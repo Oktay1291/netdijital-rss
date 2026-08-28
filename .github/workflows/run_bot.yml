@@ -1,23 +1,33 @@
+name: NetDijital RSS Bot
+
+on:
+  schedule:
+    # Her 3 saatte bir otomatik çalışır (istediğin gibi değiştirebilirsin)
+    - cron: '0 */3 * * *'
+  workflow_dispatch: # Manuel olarak da çalıştırabilmeni sağlar
+
 jobs:
-  build:
+  run-bot:
     runs-on: ubuntu-latest
+
     steps:
-      - name: Checkout repo
+      - name: Depoyu Kopyala (Checkout)
         uses: actions/checkout@v4
 
-      - name: Set up Python
+      - name: Python Kurulumu
         uses: actions/setup-python@v5
         with:
           python-version: '3.10'
 
-      - name: Install dependencies
+      - name: Gerekli Kütüphaneleri Yükle
         run: |
+          python -m pip install --upgrade pip
           pip install feedparser requests deep-translator
 
-      - name: Run bot
+      - name: Botu Çalıştır ve Token Aktar
         env:
           CLIENT_ID: ${{ secrets.CLIENT_ID }}
           CLIENT_SECRET: ${{ secrets.CLIENT_SECRET }}
           REFRESH_TOKEN: ${{ secrets.REFRESH_TOKEN }}
-          BLOG_ID: ${{ secrets.BLOG_ID }} # Eğer Blog ID'yi de secret yaptıysan
+          BLOG_ID: ${{ secrets.BLOG_ID }}
         run: python rss_bot.py
