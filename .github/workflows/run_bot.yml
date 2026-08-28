@@ -2,9 +2,8 @@ name: NetDijital RSS Bot
 
 on:
   schedule:
-    # Her 3 saatte bir otomatik çalışır (istediğin gibi değiştirebilirsin)
-    - cron: '0 */3 * * *'
-  workflow_dispatch: # Manuel olarak da çalıştırabilmeni sağlar
+    - cron: '0 */3 * * *' # Her 3 saatte bir otomatik çalışır
+  workflow_dispatch: # Manuel çalıştırma desteği
 
 jobs:
   run-bot:
@@ -26,8 +25,8 @@ jobs:
 
       - name: Botu Çalıştır ve Token Aktar
         env:
-          CLIENT_ID: ${{ secrets.CLIENT_ID }}
-          CLIENT_SECRET: ${{ secrets.CLIENT_SECRET }}
-          REFRESH_TOKEN: ${{ secrets.REFRESH_TOKEN }}
-          BLOG_ID: ${{ secrets.BLOG_ID }}
+          BLOGGER_BLOG_ID: ${{ secrets.BLOGGER_BLOG_ID }}
+          BLOGGER_CLIENT_ID: ${{ secrets.BLOGGER_CLIENT_ID }}
+          BLOGGER_CLIENT_SECRET: ${{ secrets.BLOGGER_CLIENT_SECRET }}
+          BLOGGER_REFRESH_TOKEN: ${{ secrets.BLOGGER_REFRESH_TOKEN }}
         run: python rss_bot.py
