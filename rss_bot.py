@@ -1,14 +1,43 @@
+import os
 import feedparser
 import html
 from datetime import datetime
 import requests
 from deep_translator import GoogleTranslator
 
-# === AYARLAR ===
-BLOG_ID = "BURAYA_BLOG_ID_YAZ"  # Blogger blog ID
-ACCESS_TOKEN = "BURAYA_ACCESS_TOKEN_YAZ"  # OAuth 2.0 erişim tokenı
+# === GİT-HUB SECRETS'DAN BİLGİLERİ ALMA ===
+BLOG_ID = os.getenv("BLOGGER_BLOG_ID")
+CLIENT_ID = os.getenv("BLOGGER_CLIENT_ID")
+CLIENT_SECRET = os.getenv("BLOGGER_CLIENT_SECRET")
+REFRESH_TOKEN = os.getenv("BLOGGER_REFRESH_TOKEN")
 
-# === ÇOKLU RSS KAYNAKLARI LİSTESİ ===
+# === OTOMATİK ACCESS TOKEN ÜRETME FONKSİYONU ===
+def get_access_token(client_id, client_secret, refresh_token):
+    url = "https://oauth2.googleapis.com/token"
+    data = {
+        "client_id": client_id,
+        "client_secret": client_secret,
+        "refresh_token": refresh_token,
+        "grant_type": "refresh_token"
+    }
+    response = requests.post(url, data=data)
+    if response.status_code == 200:
+        token_info = response.json()
+        return token_info.get("access_token")
+    else:
+        print(f"❌ Token yenileme hatası: {response.status_code} - {response.text}")
+        return None
+
+print("🔄 Kimlik doğrulaması yapılıyor ve token yenileniyor...")
+ACCESS_TOKEN = get_access_token(CLIENT_ID, CLIENT_SECRET, REFRESH_TOKEN)
+
+if not ACCESS_TOKEN:
+    print("❌ Kritik Hata: Token alınamadığı için bot durduruldu.")
+    exit(1)
+
+print("✅ Taze Access Token başarıyla alındı!")
+
+# === ÇOKLU RSS KAYNAKLARI LİSTESİ (14 Kaynak) ===
 RSS_SOURCES = [
     {"url": "https://techcrunch.com/feed/", "kaynak": "TechCrunch"},
     {"url": "https://www.theverge.com/rss/index.xml", "kaynak": "The Verge"},
@@ -28,6 +57,7 @@ RSS_SOURCES = [
 
 translator = GoogleTranslator(source='auto', target='tr')
 
+# === TÜM KAYNAKLARI DÖNGÜYE SOK ===
 for source in RSS_SOURCES:
     rss_url = source["url"]
     kaynak_adi = source["kaynak"]
@@ -35,6 +65,7 @@ for source in RSS_SOURCES:
     print(f"🔄 Taranıyor: {kaynak_adi}...")
     feed = feedparser.parse(rss_url)
 
+    # Her kaynaktan en son 2 haber çekilir
     for entry in feed.entries[:2]:
         try:
             original_title = entry.title
@@ -45,29 +76,21 @@ for source in RSS_SOURCES:
 
             published = datetime.now().isoformat()
 
-            # === GÖRSELİ YAKALA (Media Content veya Enclosure) ===
-            image_url = ""
-            # 1. Yöntem: media_content kontrolü
+            # === GÖRSELİ YAKALA ===
+            image_url = None
             if hasattr(entry, 'media_content') and entry.media_content:
-                image_url = entry.media_content[0].get('url', '')
-            # 2. Yöntem: media_thumbnail kontrolü
+                image_url = entry.media_content[0].get('url')
             elif hasattr(entry, 'media_thumbnail') and entry.media_thumbnail:
-                image_url = entry.media_thumbnail[0].get('url', '')
-            # 3. Yöntem: enclosure (eklenti) kontrolü
-            elif hasattr(entry, 'enclosures') and entry.enclosures:
-                for enc in entry.enclosures:
-                    if 'image' in enc.get('type', ''):
-                        image_url = enc.get('href', '')
-                        break
+                image_url = entry.media_thumbnail[0].get('url')
 
-            # Eğer görsel bulunduysa HTML koduna ekle, bulunmadıysa sadece metin kalsın
+            # === İÇERİK HTML YAPISI ===
             if image_url:
-                content_html = f"<p><img src='{image_url}' alt='{title}' style='max-width:100%; height:auto; border-radius:8px;' /></p><p>{summary}</p><p><i>Kaynak: {kaynak_adi}</i></p>"
+                content_html = f"<p><img src='{image_url}' alt='Haber Görseli' style='max-width:100%; height:auto; border-radius:8px;'/></p><p>{summary}</p><p><i>Kaynak: {kaynak_adi}</i></p>"
             else:
                 content_html = f"<p>{summary}</p><p><i>Kaynak: {kaynak_adi}</i></p>"
 
-            # === KATEGORİLER VE ETİKETLER (En fazla 9 adet) ===
-            categories = [kaynak_adi]
+            # === KATEGORİLER VE ETİKETLER (Maksimum 9 adet) ===
+            categories = [kaynak_adi]  # İlk etiket her zaman kaynağın kendi adıdır
             
             original_lower = original_title.lower()
             if "ai" in original_lower or "artificial intelligence" in original_lower or "yapay zeka" in original_lower:
@@ -84,9 +107,9 @@ for source in RSS_SOURCES:
             if len(categories) == 1:
                 categories.append("Teknoloji")
                 
-            categories = categories[:9]
+            categories = categories[:9]  # En fazla 9 etiket sınırı
 
-            # === Blogger API Verisi ===
+            # === Blogger API Gönderi Paketi ===
             post_data = {
                 "kind": "blogger#post",
                 "blog": {"id": BLOG_ID},
@@ -105,9 +128,9 @@ for source in RSS_SOURCES:
             response = requests.post(url, headers=headers, json=post_data)
 
             if response.status_code == 200:
-                print(f"  ✅ Görsel Destekli Yayınlandı [{kaynak_adi}]: {title}")
+                print(f"  ✅ Yayınlandı [{kaynak_adi}] ({', '.join(categories)}): {title}")
             else:
                 print(f"  ❌ Blogger Hatası [{kaynak_adi}]: {response.status_code} - {response.text}")
 
         except Exception as e:
-            print(f"  ❌ Hata [{kaynak_adi}]: {e}")
+            print(f"  ❌ İşlem Hatası [{kaynak_adi}]: {e}")
