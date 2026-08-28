@@ -6,7 +6,6 @@ import requests
 from deep_translator import GoogleTranslator
 
 # === GİT-HUB SECRETS'DAN BİLGİLERİ ALMA ===
-BLOG_ID = os.getenv("BLOGGER_BLOG_ID")
 CLIENT_ID = os.getenv("BLOGGER_CLIENT_ID")
 CLIENT_SECRET = os.getenv("BLOGGER_CLIENT_SECRET")
 REFRESH_TOKEN = os.getenv("BLOGGER_REFRESH_TOKEN")
@@ -37,8 +36,8 @@ if not ACCESS_TOKEN:
 
 print("✅ Taze Access Token başarıyla alındı!")
 
-# === HANGİ BLOGLARA YETKİN VAR KONTROL EDELİM ===
-print("🔍 Bu token ile erişilebilen bloglar listeleniyor...")
+# === OTOMATİK BLOG ID KEŞFİ (403 Hatasını Kökten Çözen Akıllı Mekanizma) ===
+print("🔍 NetDijital blogunun gerçek ID'si otomatik alınıyor...")
 blogs_url = "https://www.googleapis.com/blogger/v3/users/self/blogs"
 headers = {
     "Authorization": f"Bearer {ACCESS_TOKEN}",
@@ -46,16 +45,18 @@ headers = {
 }
 blogs_response = requests.get(blogs_url, headers=headers)
 
+BLOG_ID = None
 if blogs_response.status_code == 200:
     blogs_data = blogs_response.json()
-    if "items" in blogs_data:
-        print("📌 Erişilebilen Blog Listesi:")
-        for blog in blogs_data["items"]:
-            print(f"   👉 Blog Adı: {blog['name']} | Gerçek Blog ID: {blog['id']} | URL: {blog['url']}")
+    if "items" in blogs_data and len(blogs_data["items"]) > 0:
+        BLOG_ID = blogs_data["items"][0]["id"]
+        print(f"✅ Başarılı! Otomatik Eşleşen Blog: {blogs_data['items'][0]['name']} | Gerçek ID: {BLOG_ID}")
     else:
-        print("⚠️ Bu hesapta yönetici olduğun hiçbir Blogger blogu bulunamadı!")
+        print("❌ Hata: Bu hesapta yönetici olduğun blog bulunamadı!")
+        exit(1)
 else:
-    print(f"❌ Bloglar listelenemedi: {blogs_response.status_code} - {blogs_response.text}")
+    print(f"❌ Blog listesi alınamadı: {blogs_response.status_code} - {blogs_response.text}")
+    exit(1)
 
 # === ÇOKLU RSS KAYNAKLARI LİSTESİ (14 Kaynak) ===
 RSS_SOURCES = [
@@ -110,7 +111,7 @@ for source in RSS_SOURCES:
                 content_html = f"<p>{summary}</p><p><i>Kaynak: {kaynak_adi}</i></p>"
 
             # === KATEGORİLER VE ETİKETLER (Maksimum 9 adet) ===
-            categories = [kaynak_adi]  # İlk etiket her zaman kaynağın kendi adıdır
+            categories = [kaynak_adi]
             
             original_lower = original_title.lower()
             if "ai" in original_lower or "artificial intelligence" in original_lower or "yapay zeka" in original_lower:
@@ -127,7 +128,7 @@ for source in RSS_SOURCES:
             if len(categories) == 1:
                 categories.append("Teknoloji")
                 
-            categories = categories[:9]  # En fazla 9 etiket sınırı
+            categories = categories[:9]
 
             # === Blogger API Gönderi Paketi ===
             post_data = {
