@@ -37,6 +37,26 @@ if not ACCESS_TOKEN:
 
 print("✅ Taze Access Token başarıyla alındı!")
 
+# === HANGİ BLOGLARA YETKİN VAR KONTROL EDELİM ===
+print("🔍 Bu token ile erişilebilen bloglar listeleniyor...")
+blogs_url = "https://www.googleapis.com/blogger/v3/users/self/blogs"
+headers = {
+    "Authorization": f"Bearer {ACCESS_TOKEN}",
+    "Content-Type": "application/json"
+}
+blogs_response = requests.get(blogs_url, headers=headers)
+
+if blogs_response.status_code == 200:
+    blogs_data = blogs_response.json()
+    if "items" in blogs_data:
+        print("📌 Erişilebilen Blog Listesi:")
+        for blog in blogs_data["items"]:
+            print(f"   👉 Blog Adı: {blog['name']} | Gerçek Blog ID: {blog['id']} | URL: {blog['url']}")
+    else:
+        print("⚠️ Bu hesapta yönetici olduğun hiçbir Blogger blogu bulunamadı!")
+else:
+    print(f"❌ Bloglar listelenemedi: {blogs_response.status_code} - {blogs_response.text}")
+
 # === ÇOKLU RSS KAYNAKLARI LİSTESİ (14 Kaynak) ===
 RSS_SOURCES = [
     {"url": "https://techcrunch.com/feed/", "kaynak": "TechCrunch"},
