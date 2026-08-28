@@ -61,14 +61,6 @@ RSS_SOURCES = [
         "kaynak": "Wired"
     },
     {
-        "url": "https://mashable.com/feed.rss",
-        "kaynak": "Mashable"
-    },
-    {
-        "url": "https://venturebeat.com/feed/",
-        "kaynak": "VentureBeat"
-    },
-    {
         "url": "https://thenextweb.com/feed",
         "kaynak": "The Next Web"
     },
@@ -79,14 +71,6 @@ RSS_SOURCES = [
     {
         "url": "https://gizmodo.com/feed",
         "kaynak": "Gizmodo"
-    },
-    {
-        "url": "https://9to5mac.com/feed/",
-        "kaynak": "9to5Mac"
-    },
-    {
-        "url": "https://9to5google.com/feed/",
-        "kaynak": "9to5Google"
     },
     {
         "url": "https://electrek.co/feed/",
@@ -109,16 +93,8 @@ RSS_SOURCES = [
         "kaynak": "AnandTech"
     },
     {
-        "url": "https://www.slashgear.com/feed/",
-        "kaynak": "SlashGear"
-    },
-    {
         "url": "https://readwrite.com/feed/",
         "kaynak": "ReadWrite"
-    },
-    {
-        "url": "https://www.neowin.net/news/rss/",
-        "kaynak": "Neowin"
     }
 ]
 
