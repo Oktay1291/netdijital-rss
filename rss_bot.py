@@ -45,8 +45,29 @@ for source in RSS_SOURCES:
 
             published = datetime.now().isoformat()
 
-            # === KATEGORİLER VE ETİKETLER (En fazla 9 adet olacak şekilde sınırlandırıldı) ===
-            categories = [kaynak_adi]  # 1. Etiket: Kaynağın adı
+            # === GÖRSELİ YAKALA (Media Content veya Enclosure) ===
+            image_url = ""
+            # 1. Yöntem: media_content kontrolü
+            if hasattr(entry, 'media_content') and entry.media_content:
+                image_url = entry.media_content[0].get('url', '')
+            # 2. Yöntem: media_thumbnail kontrolü
+            elif hasattr(entry, 'media_thumbnail') and entry.media_thumbnail:
+                image_url = entry.media_thumbnail[0].get('url', '')
+            # 3. Yöntem: enclosure (eklenti) kontrolü
+            elif hasattr(entry, 'enclosures') and entry.enclosures:
+                for enc in entry.enclosures:
+                    if 'image' in enc.get('type', ''):
+                        image_url = enc.get('href', '')
+                        break
+
+            # Eğer görsel bulunduysa HTML koduna ekle, bulunmadıysa sadece metin kalsın
+            if image_url:
+                content_html = f"<p><img src='{image_url}' alt='{title}' style='max-width:100%; height:auto; border-radius:8px;' /></p><p>{summary}</p><p><i>Kaynak: {kaynak_adi}</i></p>"
+            else:
+                content_html = f"<p>{summary}</p><p><i>Kaynak: {kaynak_adi}</i></p>"
+
+            # === KATEGORİLER VE ETİKETLER (En fazla 9 adet) ===
+            categories = [kaynak_adi]
             
             original_lower = original_title.lower()
             if "ai" in original_lower or "artificial intelligence" in original_lower or "yapay zeka" in original_lower:
@@ -60,11 +81,9 @@ for source in RSS_SOURCES:
             if "tesla" in original_lower or "ev" in original_lower or "car" in original_lower:
                 categories.append("Elektrikli Araçlar")
                 
-            # Varsayılan kategori ekleme
             if len(categories) == 1:
                 categories.append("Teknoloji")
                 
-            # Blogger en fazla etiket/kategori sınırına (veya senin belirttiğin 9 sınırına) uyması için kesme işlemi
             categories = categories[:9]
 
             # === Blogger API Verisi ===
@@ -72,9 +91,9 @@ for source in RSS_SOURCES:
                 "kind": "blogger#post",
                 "blog": {"id": BLOG_ID},
                 "title": title,
-                "content": f"<p>{summary}</p><p><i>Kaynak: {kaynak_adi}</i></p>",
+                "content": content_html,
                 "published": published,
-                "labels": categories   # Etiketler buraya işleniyor
+                "labels": categories
             }
 
             url = f"https://www.googleapis.com/blogger/v3/blogs/{BLOG_ID}/posts/"
@@ -86,7 +105,7 @@ for source in RSS_SOURCES:
             response = requests.post(url, headers=headers, json=post_data)
 
             if response.status_code == 200:
-                print(f"  ✅ Yayınlandı [{kaynak_adi}] ({', '.join(categories)}): {title}")
+                print(f"  ✅ Görsel Destekli Yayınlandı [{kaynak_adi}]: {title}")
             else:
                 print(f"  ❌ Blogger Hatası [{kaynak_adi}]: {response.status_code} - {response.text}")
 
