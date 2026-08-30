@@ -1,43 +1,37 @@
-
-Çalıştır bot · YML
 name: Otomatik Haber Paylaşımı
- 
+
 on:
   schedule:
-    # AdSense hedefli, kaliteye odaklı bir site için sık paylaşım önerilmez.
-    # Her 3 saatte bir çalışır, her çalıştırmada en fazla 2 yazı üretir
-    # (günde ~16 yazı tavanı). İstersen "0 */1 * * *" yaparak saatlik de
-    # çalıştırabilirsin, ama düşük hacim + yüksek kalite uzun vadede daha iyi.
-    - cron: "0 */3 * * *"
+    # Her saat başı çalışır. Script her çalıştırmada en fazla 2 yeni
+    # (daha önce paylaşılmamış) haber paylaşır -> saatte 2 haber.
+    - cron: "0 * * * *"
   workflow_dispatch: {}   # İstersen elle de tetikleyebilirsin
- 
+
 permissions:
   contents: write   # posted_history.json dosyasını repoya geri yazabilmek için
- 
+
 jobs:
   paylas:
     runs-on: ubuntu-latest
     steps:
       - name: Repoyu indir
         uses: actions/checkout@v4
- 
+
       - name: Python kur
         uses: actions/setup-python@v5
         with:
           python-version: "3.11"
- 
+
       - name: Kütüphaneleri kur
         run: pip install -r requirements.txt
- 
+
       - name: Scripti çalıştır
         env:
           BLOGGER_CLIENT_ID: ${{ secrets.BLOGGER_CLIENT_ID }}
           BLOGGER_CLIENT_SECRET: ${{ secrets.BLOGGER_CLIENT_SECRET }}
           BLOGGER_REFRESH_TOKEN: ${{ secrets.BLOGGER_REFRESH_TOKEN }}
-          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
-          PEXELS_API_KEY: ${{ secrets.PEXELS_API_KEY }}
         run: python blogger_auto_poster.py
- 
+
       - name: Geçmiş dosyasını commit et
         run: |
           git config --global user.name "github-actions[bot]"
@@ -45,4 +39,3 @@ jobs:
           git add posted_history.json
           git diff --cached --quiet || git commit -m "Paylaşım geçmişi güncellendi"
           git push
- 
