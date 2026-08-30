@@ -2,13 +2,12 @@ name: Otomatik Haber Paylaşımı
 
 on:
   schedule:
-    # Her saat başı çalışır. Script her çalıştırmada en fazla 2 yeni
-    # (daha önce paylaşılmamış) haber paylaşır -> saatte 2 haber.
+    # Her saat başı çalışır. Script her çalıştırmada en fazla 2 haber paylaşır.
     - cron: "0 * * * *"
-  workflow_dispatch: {}   # İstersen elle de tetikleyebilirsin
+  workflow_dispatch: {}
 
 permissions:
-  contents: write   # posted_history.json dosyasını repoya geri yazabilmek için
+  contents: write
 
 jobs:
   paylas:
@@ -30,6 +29,8 @@ jobs:
           BLOGGER_CLIENT_ID: ${{ secrets.BLOGGER_CLIENT_ID }}
           BLOGGER_CLIENT_SECRET: ${{ secrets.BLOGGER_CLIENT_SECRET }}
           BLOGGER_REFRESH_TOKEN: ${{ secrets.BLOGGER_REFRESH_TOKEN }}
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          PEXELS_API_KEY: ${{ secrets.PEXELS_API_KEY }}
         run: python rss_bot.py
 
       - name: Geçmiş dosyasını commit et
