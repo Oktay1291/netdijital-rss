@@ -30,7 +30,7 @@ jobs:
           BLOGGER_CLIENT_ID: ${{ secrets.BLOGGER_CLIENT_ID }}
           BLOGGER_CLIENT_SECRET: ${{ secrets.BLOGGER_CLIENT_SECRET }}
           BLOGGER_REFRESH_TOKEN: ${{ secrets.BLOGGER_REFRESH_TOKEN }}
-        run: python blogger_auto_poster.py
+        run: python rss_bot.py
 
       - name: Geçmiş dosyasını commit et
         run: |
