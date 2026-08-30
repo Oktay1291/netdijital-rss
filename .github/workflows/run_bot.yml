@@ -2,7 +2,8 @@ name: Otomatik Haber Paylaşımı
 
 on:
   schedule:
-    - cron: "0 * * * *"
+    # Günde 18 kez, düzenli aralıklarla çalışır (Gemini günlük 20 istek kotasına takılmaz)
+    - cron: "0 0,1,3,4,6,7,9,10,12,13,15,16,18,19,21,22 * * *"
   workflow_dispatch: {}
 
 permissions:
