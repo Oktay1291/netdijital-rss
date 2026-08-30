@@ -2,7 +2,7 @@ name: Otomatik Haber Paylaşımı
 
 on:
   schedule:
-    # Her saat başı çalışır. Script her çalıştırmada en fazla 2 haber paylaşır.
+    # Her saat başı çalışır (saatte 2 haber)
     - cron: "0 * * * *"
   workflow_dispatch: {}
 
@@ -37,6 +37,5 @@ jobs:
         run: |
           git config --global user.name "github-actions[bot]"
           git config --global user.email "github-actions[bot]@users.noreply.github.com"
-          git add posted_history.json
-          git diff --cached --quiet || git commit -m "Paylaşım geçmişi güncellendi"
-          git push
+          git add -A
+          git diff --staged --quiet || (git commit -m "Paylaşım geçmişi güncellendi" && git push)
