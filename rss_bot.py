@@ -20,6 +20,8 @@ HISTORY_FILE = "posted_history.json"
 HABER_SAYISI_PER_CALISMA = 2
 MAX_GECMIS_LINK = 2000
 
+# True: Yazılar Blogger paneline Taslak olarak düşer.
+# False: Direkt canlı yayına alınır.
 TASLAK_OLARAK_KAYDET = True
 
 RSS_SOURCES = [
@@ -164,7 +166,7 @@ SADECE şu JSON formatında cevap ver, Markdown kod bloğu (```json gibi) veya b
     try:
         client = genai.Client(api_key=GEMINI_API_KEY)
         response = client.models.generate_content(
-            model="gemini-2.5-flash",
+            model="gemini-3.6-flash",
             contents=prompt,
         )
         metin = response.text.strip()
@@ -249,7 +251,8 @@ def main():
                 orijinal_ozet = getattr(entry, "summary", "")
 
                 makale = llm_ile_makale_uret(orijinal_baslik, orijinal_ozet, kaynak_adi)
-                time.sleep(5)  # Kota aşımını engellemek için kısa bekleme
+                # Kota aşımını engellemek için istek sonrası 30 saniye bekleme
+                time.sleep(30)
 
                 if not makale:
                     print(f"  ⏭️ Atlandı (içerik üretilemedi): {orijinal_baslik}")
