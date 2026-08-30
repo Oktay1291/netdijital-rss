@@ -1,5 +1,6 @@
 import os
 import json
+import time
 import random
 import traceback
 import urllib.request
@@ -163,7 +164,7 @@ SADECE şu JSON formatında cevap ver, Markdown kod bloğu (```json gibi) veya b
     try:
         client = genai.Client(api_key=GEMINI_API_KEY)
         response = client.models.generate_content(
-            model="gemini-3.6-flash",
+            model="gemini-2.5-flash",
             contents=prompt,
         )
         metin = response.text.strip()
@@ -193,7 +194,7 @@ SADECE şu JSON formatında cevap ver, Markdown kod bloğu (```json gibi) veya b
 def blogger_paylas(access_token, blog_id, baslik, icerik, etiketler, meta_aciklama):
     url = f"[https://www.googleapis.com/blogger/v3/blogs/](https://www.googleapis.com/blogger/v3/blogs/){blog_id}/posts/"
     if TASLAK_OLARAK_KAYDET:
-        url += "?isDraft=true"
+        url = f"[https://www.googleapis.com/blogger/v3/blogs/](https://www.googleapis.com/blogger/v3/blogs/){blog_id}/posts/?isDraft=true"
     headers = {"Authorization": f"Bearer {access_token}", "Content-Type": "application/json"}
     post_data = {
         "kind": "blogger#post",
@@ -248,6 +249,8 @@ def main():
                 orijinal_ozet = getattr(entry, "summary", "")
 
                 makale = llm_ile_makale_uret(orijinal_baslik, orijinal_ozet, kaynak_adi)
+                time.sleep(5)  # Kota aşımını engellemek için kısa bekleme
+
                 if not makale:
                     print(f"  ⏭️ Atlandı (içerik üretilemedi): {orijinal_baslik}")
                     continue
