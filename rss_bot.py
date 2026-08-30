@@ -6,20 +6,19 @@ import urllib.request
 
 import requests
 import feedparser
+from google import genai
 
 # ================== AYARLAR ==================
 CLIENT_ID = os.getenv("BLOGGER_CLIENT_ID")
 CLIENT_SECRET = os.getenv("BLOGGER_CLIENT_SECRET")
 REFRESH_TOKEN = os.getenv("BLOGGER_REFRESH_TOKEN")
-ANTHROPIC_API_KEY = os.getenv("ANTHROPIC_API_KEY")      # Zorunlu: özgün içerik üretimi için
-PEXELS_API_KEY = os.getenv("PEXELS_API_KEY")            # Opsiyonel: telifsiz görsel için
+GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
+PEXELS_API_KEY = os.getenv("PEXELS_API_KEY")
 
 HISTORY_FILE = "posted_history.json"
-HABER_SAYISI_PER_CALISMA = 2       # Her çalıştırmada paylaşılacak haber sayısı
-MAX_GECMIS_LINK = 2000             # Geçmiş dosyasının büyümesini sınırlamak için
+HABER_SAYISI_PER_CALISMA = 2
+MAX_GECMIS_LINK = 2000
 
-# AdSense başvurusu / ilk dönem için ÖNERİ: True yap, yazılar "taslak" olarak
-# Blogger'a düşsün, sen kontrol edip elle yayınla. Sisteme güvendikçe False yapabilirsin.
 TASLAK_OLARAK_KAYDET = True
 
 RSS_SOURCES = [
@@ -38,7 +37,6 @@ RSS_SOURCES = [
     {"url": "https://readwrite.com/feed/", "kaynak": "ReadWrite"},
 ]
 
-# LLM'den yeterli etiket gelmezse tamamlamak için yedek havuz
 GENEL_ETIKET_HAVUZU = [
     "Teknoloji Haberleri", "Güncel", "Dijital Dünya", "İnceleme",
     "Haberler", "Bilim ve Teknoloji", "Gündem",
@@ -93,7 +91,7 @@ def save_history(data):
         json.dump(data, f, ensure_ascii=False, indent=2)
 
 
-# ================== RSS ÇEKME (User-Agent ile) ==================
+# ================== RSS ÇEKME ==================
 def fetch_feed(url, kaynak_adi="Kaynak"):
     req = urllib.request.Request(
         url,
@@ -107,10 +105,8 @@ def fetch_feed(url, kaynak_adi="Kaynak"):
         return feedparser.parse("")
 
 
-# ================== TELİFSİZ GÖRSEL (Pexels) ==================
+# ================== TELİFSİZ GÖRSEL ==================
 def pexels_gorsel_bul(anahtar_kelime):
-    """Kaynak sitenin görselini hotlink'lemek yerine Pexels'ten telifsiz,
-    ticari kullanıma uygun bir görsel arar. API anahtarı yoksa görselsiz devam eder."""
     if not PEXELS_API_KEY or not anahtar_kelime:
         return None, None
     try:
@@ -129,13 +125,10 @@ def pexels_gorsel_bul(anahtar_kelime):
     return None, None
 
 
-# ================== AI İLE ÖZGÜN MAKALE ÜRETİMİ ==================
+# ================== GEMINI İLE MAKALE ÜRETİMİ ==================
 def llm_ile_makale_uret(orijinal_baslik, orijinal_ozet, kaynak_adi):
-    """Habere kaynaklık eden başlık/özeti birebir çevirmek yerine,
-    Claude API ile TAMAMEN ÖZGÜN, SEO uyumlu bir Türkçe makale ürettirir.
-    Ayrıca kategori, en az 9 etiket, meta açıklama ve görsel arama terimi döner."""
-    if not ANTHROPIC_API_KEY:
-        print("  ❌ ANTHROPIC_API_KEY tanımlı değil, içerik üretilemedi.")
+    if not GEMINI_API_KEY:
+        print("  ❌ GEMINI_API_KEY tanımlı değil, içerik üretilemedi.")
         return None
 
     prompt = f"""Sen bir Türkçe teknoloji haber sitesinde çalışan editörsün. Aşağıdaki İngilizce
@@ -150,11 +143,11 @@ Kurallar:
 - En az 3 paragraf ve en az 2 tane <h2> alt başlık kullan (giriş, gelişme, değerlendirme).
 - Cümle yapılarını ve kelime seçimini kaynaktan tamamen bağımsız kur, birebir çeviri OLMASIN.
 - Sona "Kaynak: {kaynak_adi}" ifadesini ekle (link verme, sadece isim yaz).
-- Sadece verilen bilgiyle sınırlı kal, uydurma istatistik veya alıntı ekleme.
+- Sadece verilen bilgiyle sınırlı kal, uydurma bilgi ekleme.
 - Ayrıca üret: 150 karakteri geçmeyen SEO meta açıklaması, 1 ana kategori,
   en az 9 adet Türkçe etiket, ve görsel aramak için 2-3 kelimelik İNGİLİZCE anahtar kelime.
 
-SADECE şu JSON formatında cevap ver, başka hiçbir açıklama ekleme:
+SADECE şu JSON formatında cevap ver, Markdown kod bloğu (```json gibi) veya başka hiçbir metin ekleme:
 {{
   "baslik": "...",
   "icerik_html": "<p>...</p><h2>...</h2><p>...</p>",
@@ -165,27 +158,17 @@ SADECE şu JSON formatında cevap ver, başka hiçbir açıklama ekleme:
 }}"""
 
     try:
-        r = requests.post(
-            "https://api.anthropic.com/v1/messages",
-            headers={
-                "x-api-key": ANTHROPIC_API_KEY,
-                "anthropic-version": "2023-06-01",
-                "content-type": "application/json",
-            },
-            json={
-                "model": "claude-haiku-4-5-20251001",
-                "max_tokens": 1500,
-                "messages": [{"role": "user", "content": prompt}],
-            },
-            timeout=40,
+        client = genai.Client(api_key=GEMINI_API_KEY)
+        response = client.models.generate_content(
+            model="gemini-2.5-flash",
+            contents=prompt,
         )
-        r.raise_for_status()
-        metin = r.json()["content"][0]["text"].strip()
+        metin = response.text.strip()
         metin = metin.replace("```json", "").replace("```", "").strip()
         veri = json.loads(metin)
 
-        # En az 9 etiket garantisi
-        etiketler = list(dict.fromkeys(veri.get("etiketler", [])))  # tekrarları temizle
+        # En az 9 etiket tamamlama
+        etiketler = list(dict.fromkeys(veri.get("etiketler", [])))
         if kaynak_adi not in etiketler:
             etiketler.append(kaynak_adi)
         havuz = GENEL_ETIKET_HAVUZU.copy()
@@ -199,13 +182,13 @@ SADECE şu JSON formatında cevap ver, başka hiçbir açıklama ekleme:
         return veri
 
     except Exception as e:
-        print(f"  ⚠️ LLM makale üretme hatası: {e}")
+        print(f"  ⚠️ Gemini makale üretme hatası: {e}")
         return None
 
 
 # ================== BLOGGER'A GÖNDER ==================
 def blogger_paylas(access_token, blog_id, baslik, icerik, etiketler, meta_aciklama):
-    url = f"https://www.googleapis.com/blogger/v3/blogs/{blog_id}/posts/"
+    url = f"[https://www.googleapis.com/blogger/v3/blogs/](https://www.googleapis.com/blogger/v3/blogs/){blog_id}/posts/"
     if TASLAK_OLARAK_KAYDET:
         url += "?isDraft=true"
     headers = {"Authorization": f"Bearer {access_token}", "Content-Type": "application/json"}
@@ -255,7 +238,7 @@ def main():
 
             link = getattr(entry, "link", None)
             if not link or link in history["yayinlanan_linkler"]:
-                continue  # Daha önce paylaşılmış haber, atla
+                continue
 
             try:
                 orijinal_baslik = entry.title
@@ -263,8 +246,6 @@ def main():
 
                 makale = llm_ile_makale_uret(orijinal_baslik, orijinal_ozet, kaynak_adi)
                 if not makale:
-                    # Özgün içerik üretilemediyse bu haberi ATLA, düşük kaliteli
-                    # yedek içerikle paylaşma. Bir sonraki çalıştırmada tekrar denenir.
                     print(f"  ⏭️ Atlandı (içerik üretilemedi): {orijinal_baslik}")
                     continue
 
