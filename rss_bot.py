@@ -1,6 +1,5 @@
 import os
 import json
-import time
 import random
 import traceback
 import urllib.request
@@ -17,11 +16,10 @@ GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
 PEXELS_API_KEY = os.getenv("PEXELS_API_KEY")
 
 HISTORY_FILE = "posted_history.json"
-HABER_SAYISI_PER_CALISMA = 2
 MAX_GECMIS_LINK = 2000
 
-# True: Yazılar Blogger paneline Taslak olarak düşer.
-# False: Direkt canlı yayına alınır.
+# True: Blogger paneline taslak olarak kaydeder
+# False: Doğrudan yayına alır
 TASLAK_OLARAK_KAYDET = True
 
 RSS_SOURCES = [
@@ -32,7 +30,6 @@ RSS_SOURCES = [
     {"url": "https://www.wired.com/feed/rss", "kaynak": "Wired"},
     {"url": "https://thenextweb.com/feed", "kaynak": "The Next Web"},
     {"url": "https://www.digitaltrends.com/feed/", "kaynak": "Digital Trends"},
-    {"url": "https://gizmodo.com/feed", "kaynak": "Gizmodo"},
     {"url": "https://electrek.co/feed/", "kaynak": "Electrek"},
     {"url": "https://www.androidpolice.com/feed/", "kaynak": "Android Police"},
     {"url": "https://bgr.com/feed/", "kaynak": "BGR"},
@@ -75,17 +72,20 @@ def get_blog_id(access_token):
     return None
 
 
-# ================== GEÇMİŞ (TEKRAR ENGELLEME) ==================
+# ================== GEÇMİŞ VE SIRA YÖNETİMİ ==================
 def load_history():
+    varsayilan = {"yayinlanan_linkler": [], "son_kaynak_index": 0}
     if os.path.exists(HISTORY_FILE):
         try:
             with open(HISTORY_FILE, "r", encoding="utf-8") as f:
                 data = json.load(f)
                 if "yayinlanan_linkler" in data:
+                    if "son_kaynak_index" not in data:
+                        data["son_kaynak_index"] = 0
                     return data
         except Exception:
             pass
-    return {"yayinlanan_linkler": []}
+    return varsayilan
 
 
 def save_history(data):
@@ -94,7 +94,7 @@ def save_history(data):
         json.dump(data, f, ensure_ascii=False, indent=2)
 
 
-# ================== RSS ÇEKME ==================
+# ================== RSS OKUYUCU ==================
 def fetch_feed(url, kaynak_adi="Kaynak"):
     req = urllib.request.Request(
         url,
@@ -111,7 +111,7 @@ def fetch_feed(url, kaynak_adi="Kaynak"):
         return feedparser.parse("")
 
 
-# ================== TELİFSİZ GÖRSEL ==================
+# ================== GÖRSEL ARAMA ==================
 def pexels_gorsel_bul(anahtar_kelime):
     if not PEXELS_API_KEY or not anahtar_kelime:
         return None, None
@@ -131,10 +131,10 @@ def pexels_gorsel_bul(anahtar_kelime):
     return None, None
 
 
-# ================== GEMINI İLE MAKALE ÜRETİMİ ==================
+# ================== GEMINI MAKALE ÜRETİCİ ==================
 def llm_ile_makale_uret(orijinal_baslik, orijinal_ozet, kaynak_adi):
     if not GEMINI_API_KEY:
-        print("  ❌ GEMINI_API_KEY tanımlı değil, içerik üretilemedi.")
+        print("  ❌ GEMINI_API_KEY tanımlı değil.")
         return None
 
     prompt = f"""Sen bir Türkçe teknoloji haber sitesinde çalışan editörsün. Aşağıdaki İngilizce
@@ -173,7 +173,6 @@ SADECE şu JSON formatında cevap ver, Markdown kod bloğu (```json gibi) veya b
         metin = metin.replace("```json", "").replace("```", "").strip()
         veri = json.loads(metin)
 
-        # En az 9 etiket tamamlama
         etiketler = list(dict.fromkeys(veri.get("etiketler", [])))
         if kaynak_adi not in etiketler:
             etiketler.append(kaynak_adi)
@@ -192,7 +191,7 @@ SADECE şu JSON formatında cevap ver, Markdown kod bloğu (```json gibi) veya b
         return None
 
 
-# ================== BLOGGER'A GÖNDER ==================
+# ================== BLOGGER GÖNDERİMİ ==================
 def blogger_paylas(access_token, blog_id, baslik, icerik, etiketler, meta_aciklama):
     url = f"[https://www.googleapis.com/blogger/v3/blogs/](https://www.googleapis.com/blogger/v3/blogs/){blog_id}/posts/"
     if TASLAK_OLARAK_KAYDET:
@@ -221,78 +220,72 @@ def main():
     if not blog_id:
         return
 
-    if TASLAK_OLARAK_KAYDET:
-        print("📝 Mod: TASLAK (yazılar otomatik yayınlanmıyor, Blogger panelinden onay bekliyor)")
-
     history = load_history()
-    bu_calismada_paylasilan = 0
+    toplam_kaynak = len(RSS_SOURCES)
+    mevcut_index = history.get("son_kaynak_index", 0) % toplam_kaynak
 
-    kaynaklar = RSS_SOURCES.copy()
-    random.shuffle(kaynaklar)
+    secilen_kaynak = RSS_SOURCES[mevcut_index]
+    rss_url = secilen_kaynak["url"]
+    kaynak_adi = secilen_kaynak["kaynak"]
 
-    for kaynak in kaynaklar:
-        if bu_calismada_paylasilan >= HABER_SAYISI_PER_CALISMA:
-            break
+    print(f"📌 Taranacak kaynak [{mevcut_index + 1}/{toplam_kaynak}]: {kaynak_adi}")
+    
+    # Sırayı sonraki çalıştırma için ilerlet
+    history["son_kaynak_index"] = (mevcut_index + 1) % toplam_kaynak
+    save_history(history)
 
-        rss_url, kaynak_adi = kaynak["url"], kaynak["kaynak"]
-        print(f"🔎 Taranıyor: {kaynak_adi}...")
-        feed = fetch_feed(rss_url, kaynak_adi)
+    feed = fetch_feed(rss_url, kaynak_adi)
+    paylasildi = False
 
-        for entry in feed.entries[:5]:
-            if bu_calismada_paylasilan >= HABER_SAYISI_PER_CALISMA:
-                break
+    for entry in feed.entries[:10]:
+        link = getattr(entry, "link", None)
+        if not link or link in history["yayinlanan_linkler"]:
+            continue
 
-            link = getattr(entry, "link", None)
-            if not link or link in history["yayinlanan_linkler"]:
+        try:
+            orijinal_baslik = entry.title
+            orijinal_ozet = getattr(entry, "summary", "")
+
+            print(f"✍️ Gemini içerik üretiyor: {orijinal_baslik}")
+            makale = llm_ile_makale_uret(orijinal_baslik, orijinal_ozet, kaynak_adi)
+
+            if not makale:
+                print("  ⏭️ İçerik üretilemedi, sonraki habere geçiliyor.")
                 continue
 
-            try:
-                orijinal_baslik = entry.title
-                orijinal_ozet = getattr(entry, "summary", "")
+            gorsel_url, fotografci = pexels_gorsel_bul(makale.get("gorsel_arama_terimi", ""))
 
-                makale = llm_ile_makale_uret(orijinal_baslik, orijinal_ozet, kaynak_adi)
-                # Kota aşımını engellemek için istek sonrası 30 saniye bekleme
-                time.sleep(30)
-
-                if not makale:
-                    print(f"  ⏭️ Atlandı (içerik üretilemedi): {orijinal_baslik}")
-                    continue
-
-                gorsel_url, fotografci = pexels_gorsel_bul(makale.get("gorsel_arama_terimi", ""))
-
-                icerik_html = makale["icerik_html"]
-                if gorsel_url:
-                    gorsel_etiketi = (
-                        f"<p><img src='{gorsel_url}' alt='{makale['baslik']}' "
-                        f"style='max-width:100%; height:auto; border-radius:8px;'/></p>"
-                        f"<p><small>Görsel: Pexels / {fotografci}</small></p>"
-                    )
-                    icerik_html = gorsel_etiketi + icerik_html
-
-                sonuc = blogger_paylas(
-                    access_token, blog_id,
-                    makale["baslik"], icerik_html,
-                    makale["etiketler"], makale.get("meta_aciklama", ""),
+            icerik_html = makale["icerik_html"]
+            if gorsel_url:
+                gorsel_etiketi = (
+                    f"<p><img src='{gorsel_url}' alt='{makale['baslik']}' "
+                    f"style='max-width:100%; height:auto; border-radius:8px;'/></p>"
+                    f"<p><small>Görsel: Pexels / {fotografci}</small></p>"
                 )
+                icerik_html = gorsel_etiketi + icerik_html
 
-                if sonuc.status_code in (200, 201):
-                    durum = "taslak olarak kaydedildi" if TASLAK_OLARAK_KAYDET else "yayınlandı"
-                    print(f"  ✅ Başarılı ({durum}) [{kaynak_adi} | {makale.get('kategori')}]: {makale['baslik']}")
-                    history["yayinlanan_linkler"].append(link)
-                    bu_calismada_paylasilan += 1
-                    save_history(history)
-                else:
-                    print(f"  ❌ Blogger Hatası [{kaynak_adi}]: {sonuc.status_code} - {sonuc.text}")
+            sonuc = blogger_paylas(
+                access_token, blog_id,
+                makale["baslik"], icerik_html,
+                makale["etiketler"], makale.get("meta_aciklama", ""),
+            )
 
-            except Exception as e:
-                print(f"  ❌ İşlem Hatası [{kaynak_adi}]: {e}")
-                print(traceback.format_exc())
-                continue
+            if sonuc.status_code in (200, 201):
+                durum = "taslak olarak kaydedildi" if TASLAK_OLARAK_KAYDET else "yayınlandı"
+                print(f"✅ Başarılı ({durum}) [{kaynak_adi}]: {makale['baslik']}")
+                history["yayinlanan_linkler"].append(link)
+                save_history(history)
+                paylasildi = True
+                break
+            else:
+                print(f"❌ Blogger Hatası: {sonuc.status_code} - {sonuc.text}")
 
-    if bu_calismada_paylasilan == 0:
-        print("ℹ️ Bu çalıştırmada uygun yeni haber bulunamadı veya hiçbiri paylaşılamadı.")
-    else:
-        print(f"🏁 Bu çalıştırmada toplam {bu_calismada_paylasilan} yazı işlendi.")
+        except Exception as e:
+            print(f"❌ İşlem Hatası: {e}")
+            print(traceback.format_exc())
+
+    if not paylasildi:
+        print(f"ℹ️ {kaynak_adi} kaynağından yeni haber bulunamadı.")
 
 
 if __name__ == "__main__":
