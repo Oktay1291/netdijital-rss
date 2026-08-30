@@ -14,8 +14,8 @@ CLIENT_ID = os.getenv("BLOGGER_CLIENT_ID")
 CLIENT_SECRET = os.getenv("BLOGGER_CLIENT_SECRET")
 REFRESH_TOKEN = os.getenv("BLOGGER_REFRESH_TOKEN")
 
-SITE_ADI = "NetDijital"  # https://netdijital.blogspot.com/
-IletisIM_EPOSTA = "ornek@eposta.com"  # ktysarikaya@gmail.com
+SITE_ADI = "https://netdijital.blogspot.com/"  # 
+IletisIM_EPOSTA = "ktysarikaya@gmail.com"  # 
 
 
 def get_access_token():
