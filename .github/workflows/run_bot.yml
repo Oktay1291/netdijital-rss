@@ -2,7 +2,6 @@ name: Otomatik Haber Paylaşımı
 
 on:
   schedule:
-    # Her saat başı çalışır (saatte 2 haber)
     - cron: "0 * * * *"
   workflow_dispatch: {}
 
@@ -29,7 +28,7 @@ jobs:
           BLOGGER_CLIENT_ID: ${{ secrets.BLOGGER_CLIENT_ID }}
           BLOGGER_CLIENT_SECRET: ${{ secrets.BLOGGER_CLIENT_SECRET }}
           BLOGGER_REFRESH_TOKEN: ${{ secrets.BLOGGER_REFRESH_TOKEN }}
-          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
           PEXELS_API_KEY: ${{ secrets.PEXELS_API_KEY }}
         run: python rss_bot.py
 
