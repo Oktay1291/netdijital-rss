@@ -31,7 +31,7 @@ RSS_SOURCES = [
     {"url": "https://www.theverge.com/rss/index.xml", "kaynak": "The Verge"},
     {"url": "https://www.engadget.com/rss.xml", "kaynak": "Engadget"},
     {"url": "https://feeds.arstechnica.com/arstechnica/index", "kaynak": "Ars Technica"},
-    {"url": "https://www.wired.com/feed/rss", "kaynak": "Wired"},
+    
     {"url": "https://thenextweb.com/feed", "kaynak": "The Next Web"},
     {"url": "https://www.digitaltrends.com/feed/", "kaynak": "Digital Trends"},
     {"url": "https://electrek.co/feed/", "kaynak": "Electrek"},
