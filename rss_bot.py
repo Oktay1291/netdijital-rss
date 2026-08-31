@@ -1,6 +1,7 @@
 import os
 import json
 import random
+import time
 import traceback
 import urllib.request
 
@@ -17,6 +18,10 @@ PEXELS_API_KEY = os.getenv("PEXELS_API_KEY")
 
 HISTORY_FILE = "posted_history.json"
 MAX_GECMIS_LINK = 2000
+
+# Paylaşımlar arasında bekletilecek minimum süre (dakika).
+# Cron sık çalışsa bile, bu süre dolmadan yeni paylaşım yapılmaz.
+MIN_PAYLASIM_ARALIGI_DAKIKA = 80
 
 # True: Blogger paneline taslak olarak kaydeder
 # False: Doğrudan yayına alır
@@ -74,14 +79,14 @@ def get_blog_id(access_token):
 
 # ================== GEÇMİŞ VE SIRA YÖNETİMİ ==================
 def load_history():
-    varsayilan = {"yayinlanan_linkler": [], "son_kaynak_index": 0}
+    varsayilan = {"yayinlanan_linkler": [], "son_kaynak_index": 0, "son_paylasim_zamani": 0}
     if os.path.exists(HISTORY_FILE):
         try:
             with open(HISTORY_FILE, "r", encoding="utf-8") as f:
                 data = json.load(f)
                 if "yayinlanan_linkler" in data:
-                    if "son_kaynak_index" not in data:
-                        data["son_kaynak_index"] = 0
+                    data.setdefault("son_kaynak_index", 0)
+                    data.setdefault("son_paylasim_zamani", 0)
                     return data
         except Exception:
             pass
@@ -166,7 +171,7 @@ SADECE şu JSON formatında cevap ver, Markdown kod bloğu (```json gibi) veya b
     try:
         client = genai.Client(api_key=GEMINI_API_KEY)
         response = client.models.generate_content(
-            model="gemini-3.6-flash",
+            model="gemini-2.5-flash",
             contents=prompt,
         )
         metin = response.text.strip()
@@ -193,9 +198,9 @@ SADECE şu JSON formatında cevap ver, Markdown kod bloğu (```json gibi) veya b
 
 # ================== BLOGGER GÖNDERİMİ ==================
 def blogger_paylas(access_token, blog_id, baslik, icerik, etiketler, meta_aciklama):
-    url = f"[https://www.googleapis.com/blogger/v3/blogs/](https://www.googleapis.com/blogger/v3/blogs/){blog_id}/posts/"
+    url = f"https://www.googleapis.com/blogger/v3/blogs/{blog_id}/posts/"
     if TASLAK_OLARAK_KAYDET:
-        url = f"[https://www.googleapis.com/blogger/v3/blogs/](https://www.googleapis.com/blogger/v3/blogs/){blog_id}/posts/?isDraft=true"
+        url += "?isDraft=true"
     headers = {"Authorization": f"Bearer {access_token}", "Content-Type": "application/json"}
     post_data = {
         "kind": "blogger#post",
@@ -210,6 +215,18 @@ def blogger_paylas(access_token, blog_id, baslik, icerik, etiketler, meta_acikla
 
 # ================== ANA AKIŞ ==================
 def main():
+    history = load_history()
+
+    # ---- 80 dakikalık minimum aralık kontrolü ----
+    simdi = time.time()
+    son_paylasim = history.get("son_paylasim_zamani", 0)
+    gecen_dakika = (simdi - son_paylasim) / 60
+    if gecen_dakika < MIN_PAYLASIM_ARALIGI_DAKIKA:
+        kalan = round(MIN_PAYLASIM_ARALIGI_DAKIKA - gecen_dakika, 1)
+        print(f"⏳ Son paylaşımın üzerinden {round(gecen_dakika, 1)} dakika geçti. "
+              f"{kalan} dakika daha beklenecek. Bu çalıştırmada paylaşım yapılmayacak.")
+        return
+
     print("🔄 Kimlik doğrulaması yapılıyor...")
     access_token = get_access_token(CLIENT_ID, CLIENT_SECRET, REFRESH_TOKEN)
     if not access_token:
@@ -220,7 +237,6 @@ def main():
     if not blog_id:
         return
 
-    history = load_history()
     toplam_kaynak = len(RSS_SOURCES)
     mevcut_index = history.get("son_kaynak_index", 0) % toplam_kaynak
 
@@ -229,7 +245,7 @@ def main():
     kaynak_adi = secilen_kaynak["kaynak"]
 
     print(f"📌 Taranacak kaynak [{mevcut_index + 1}/{toplam_kaynak}]: {kaynak_adi}")
-    
+
     # Sırayı sonraki çalıştırma için ilerlet
     history["son_kaynak_index"] = (mevcut_index + 1) % toplam_kaynak
     save_history(history)
@@ -274,6 +290,7 @@ def main():
                 durum = "taslak olarak kaydedildi" if TASLAK_OLARAK_KAYDET else "yayınlandı"
                 print(f"✅ Başarılı ({durum}) [{kaynak_adi}]: {makale['baslik']}")
                 history["yayinlanan_linkler"].append(link)
+                history["son_paylasim_zamani"] = simdi
                 save_history(history)
                 paylasildi = True
                 break
