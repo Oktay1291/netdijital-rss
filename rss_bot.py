@@ -19,9 +19,8 @@ PEXELS_API_KEY = os.getenv("PEXELS_API_KEY")
 HISTORY_FILE = "posted_history.json"
 MAX_GECMIS_LINK = 2000
 
-# Paylaşımlar arasında bekletilecek minimum süre (dakika).
-# Cron sık çalışsa bile, bu süre dolmadan yeni paylaşım yapılmaz.
-MIN_PAYLASIM_ARALIGI_DAKIKA = 80
+# Minimum paylaşım aralığı (dakika)
+MIN_PAYLASIM_ARALIGI_DAKIKA = 70
 
 # True: Blogger paneline taslak olarak kaydeder
 # False: Doğrudan yayına alır
@@ -140,7 +139,7 @@ def pexels_gorsel_bul(anahtar_kelime):
 def llm_ile_makale_uret(orijinal_baslik, orijinal_ozet, kaynak_adi):
     if not GEMINI_API_KEY:
         print("  ❌ GEMINI_API_KEY tanımlı değil.")
-        return None
+        return None, False
 
     prompt = f"""Sen bir Türkçe teknoloji haber sitesinde çalışan editörsün. Aşağıdaki İngilizce
 kaynak habere dayanarak TAMAMEN ÖZGÜN bir Türkçe makale yaz. Kaynağı birebir çevirme;
@@ -189,16 +188,20 @@ SADECE şu JSON formatında cevap ver, Markdown kod bloğu (```json gibi) veya b
             if e not in etiketler:
                 etiketler.append(e)
         veri["etiketler"] = etiketler[:14]
-        return veri
+        return veri, False
 
     except Exception as e:
+        hata_mesaji = str(e)
+        if "429" in hata_mesaji or "RESOURCE_EXHAUSTED" in hata_mesaji:
+            print("  🚫 Gemini günlük/dakikalık kota sınırına ulaşıldı (429).")
+            return None, True
         print(f"  ⚠️ Gemini makale üretme hatası: {e}")
-        return None
+        return None, False
 
 
 # ================== BLOGGER GÖNDERİMİ ==================
 def blogger_paylas(access_token, blog_id, baslik, icerik, etiketler, meta_aciklama):
-    url = f"https://www.googleapis.com/blogger/v3/blogs/{blog_id}/posts/"
+    url = f"[https://www.googleapis.com/blogger/v3/blogs/](https://www.googleapis.com/blogger/v3/blogs/){blog_id}/posts/"
     if TASLAK_OLARAK_KAYDET:
         url += "?isDraft=true"
     headers = {"Authorization": f"Bearer {access_token}", "Content-Type": "application/json"}
@@ -217,14 +220,14 @@ def blogger_paylas(access_token, blog_id, baslik, icerik, etiketler, meta_acikla
 def main():
     history = load_history()
 
-    # ---- 80 dakikalık minimum aralık kontrolü ----
+    # Zaman kontrolü
     simdi = time.time()
     son_paylasim = history.get("son_paylasim_zamani", 0)
     gecen_dakika = (simdi - son_paylasim) / 60
-    if gecen_dakika < MIN_PAYLASIM_ARALIGI_DAKIKA:
+    if son_paylasim > 0 and gecen_dakika < MIN_PAYLASIM_ARALIGI_DAKIKA:
         kalan = round(MIN_PAYLASIM_ARALIGI_DAKIKA - gecen_dakika, 1)
-        print(f"⏳ Son paylaşımın üzerinden {round(gecen_dakika, 1)} dakika geçti. "
-              f"{kalan} dakika daha beklenecek. Bu çalıştırmada paylaşım yapılmayacak.")
+        print(f"⏳ Son paylaşımın üzerinden {round(gecen_dakika, 1)} dk geçti. "
+              f"{kalan} dk daha bekleniyor. Çalışma atlandı.")
         return
 
     print("🔄 Kimlik doğrulaması yapılıyor...")
@@ -246,7 +249,7 @@ def main():
 
     print(f"📌 Taranacak kaynak [{mevcut_index + 1}/{toplam_kaynak}]: {kaynak_adi}")
 
-    # Sırayı sonraki çalıştırma için ilerlet
+    # Sırayı peşinen sonraki kaynağa aktar ve kaydet
     history["son_kaynak_index"] = (mevcut_index + 1) % toplam_kaynak
     save_history(history)
 
@@ -263,7 +266,11 @@ def main():
             orijinal_ozet = getattr(entry, "summary", "")
 
             print(f"✍️ Gemini içerik üretiyor: {orijinal_baslik}")
-            makale = llm_ile_makale_uret(orijinal_baslik, orijinal_ozet, kaynak_adi)
+            makale, kota_asildi = llm_ile_makale_uret(orijinal_baslik, orijinal_ozet, kaynak_adi)
+
+            if kota_asildi:
+                print("⛔ Kota dolduğu için döngü sonlandırılıyor.")
+                break
 
             if not makale:
                 print("  ⏭️ İçerik üretilemedi, sonraki habere geçiliyor.")
@@ -302,7 +309,7 @@ def main():
             print(traceback.format_exc())
 
     if not paylasildi:
-        print(f"ℹ️ {kaynak_adi} kaynağından yeni haber bulunamadı.")
+        print(f"ℹ️ {kaynak_adi} kaynağından bu sefer paylaşım yapılmadı.")
 
 
 if __name__ == "__main__":
