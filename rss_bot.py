@@ -166,12 +166,14 @@ SADECE şu JSON formatında cevap ver, Markdown kod bloğu (```json gibi) veya b
   "gorsel_arama_terimi": "..."
 }}"""
 
+    client = genai.Client(api_key=GEMINI_API_KEY)
+
     for deneme in range(2):
         try:
             response = client.models.generate_content(
-    model="gemini-2.5-flash",
-    contents=prompt,
-)
+                model="gemini-3.6-flash",
+                contents=prompt,
+            )
             metin = response.text.strip()
             metin = metin.replace("```json", "").replace("```", "").strip()
             veri = json.loads(metin)
