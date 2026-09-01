@@ -19,8 +19,8 @@ PEXELS_API_KEY = os.getenv("PEXELS_API_KEY")
 HISTORY_FILE = "posted_history.json"
 MAX_GECMIS_LINK = 2000
 
-# Minimum paylaşım aralığı (dakika)
-MIN_PAYLASIM_ARALIGI_DAKIKA = 70
+# Minimum paylaşım aralığı (dakika) -> 80 DAKİKA
+MIN_PAYLASIM_ARALIGI_DAKIKA = 80
 
 # True: Blogger paneline taslak olarak kaydeder
 # False: Doğrudan yayına alır
@@ -140,30 +140,29 @@ def llm_ile_makale_uret(orijinal_baslik, orijinal_ozet, kaynak_adi):
         print("  ❌ GEMINI_API_KEY tanımlı değil.")
         return None, False
 
-    prompt = f"""Sen bir Türkçe teknoloji haber sitesinde çalışan editörsün. Aşağıdaki İngilizce
-kaynak habere dayanarak TAMAMEN ÖZGÜN bir Türkçe makale yaz. Kaynağı birebir çevirme;
-bilgiyi kendi cümlelerinle, farklı bir yapıda ve okuyucuya değer katacak şekilde anlat.
+    prompt = f"""Sen bir Türkçe teknoloji haber sitesinde çalışan profesyonel bir baş editörsün.
+Aşağıdaki İngilizce kaynak habere dayanarak TAMAMEN ÖZGÜN, derinlemesine ve Google SEO uyumlu bir Türkçe makale yaz.
 
 Kaynak Başlık: {orijinal_baslik}
 Kaynak Özet: {orijinal_ozet}
 Kaynak Site: {kaynak_adi}
 
 Kurallar:
-- En az 3 paragraf ve en az 2 tane <h2> alt başlık kullan (giriş, gelişme, değerlendirme).
-- Cümle yapılarını ve kelime seçimini kaynaktan tamamen bağımsız kur, birebir çeviri OLMASIN.
-- Sona "Kaynak: {kaynak_adi}" ifadesini ekle (link verme, sadece isim yaz).
-- Sadece verilen bilgiyle sınırlı kal, uydurma bilgi ekleme.
-- Ayrıca üret: 150 karakteri geçmeyen SEO meta açıklaması, 1 ana kategori,
-  en az 9 adet Türkçe etiket, ve görsel aramak için 2-3 kelimelik İNGİLİZCE anahtar kelime.
+- Makale uzunluğu MUTLAKA 750 ile 1200 kelime arasında olmalıdır. Konuyu yüzeysel geçme; arka planı, teknik detayları, sektörel etkileri ve kullanıcıya yansımalarını kapsamlı açıkla.
+- Makale içerisinde mantıksal bir akış oluştur: En az 4 adet <h2> başlığı, gerekli yerlerde <h3> alt başlıkları ve maddeli listeler (<ul> veya <ol>) kullan.
+- Cümle yapılarını ve kelime seçimini kaynaktan tamamen bağımsız kur, doğrudan veya yapay çeviri OLMASIN. Akıcı ve yetkin bir Türkçe kullan.
+- Sona "<p><small>Kaynak: {kaynak_adi}</small></p>" ifadesini ekle.
+- Sadece verilen konu bağlamında kalarak analiz yap, gerçek dışı uydurma bilgiler üretme.
+- Ayrıca üret: En fazla 150 karakterlik vurucu bir SEO meta açıklaması, 1 ana kategori, en az 9 adet Türkçe etiket ve görsel bulmak için 2-3 kelimelik İNGİLİZCE anahtar kelime.
 
-SADECE şu JSON formatında cevap ver, Markdown kod bloğu (```json gibi) veya başka hiçbir metin ekleme:
+SADECE şu JSON formatında yanıt ver, Markdown kod bloğu (```json gibi) veya JSON dışı hiçbir metin ekleme:
 {{
-  "baslik": "...",
-  "icerik_html": "<p>...</p><h2>...</h2><p>...</p>",
-  "meta_aciklama": "...",
-  "kategori": "...",
-  "etiketler": ["...", "..."],
-  "gorsel_arama_terimi": "..."
+  "baslik": "Dikkat Çekici ve SEO Uyumlu Türkçe Başlık",
+  "icerik_html": "<p>Giriş paragrafı...</p><h2>Alt Başlık</h2><p>Detaylı açıklamalar...</p>",
+  "meta_aciklama": "150 karakteri geçmeyen özet",
+  "kategori": "Kategori Adı",
+  "etiketler": ["Etiket1", "Etiket2"],
+  "gorsel_arama_terimi": "english keyword"
 }}"""
 
     client = genai.Client(api_key=GEMINI_API_KEY)
@@ -207,9 +206,9 @@ SADECE şu JSON formatında cevap ver, Markdown kod bloğu (```json gibi) veya b
 
 
 # ================== BLOGGER GÖNDERİMİ ==================
-def blogger_paylas(access_token, blog_id, baslik, icerik, etiketler, meta_aciklama):
-    url = f"https://www.googleapis.com/blogger/v3/blogs/{blog_id}/posts"
-    params = {"isDraft": "true"} if TASLAK_OLARAK_KAYDET else {"isDraft": "false"}
+def blogger_paylas(access_token, blog_id, baslik, icerik, etiketler, is_draft=True):
+    url = f"[https://www.googleapis.com/blogger/v3/blogs/](https://www.googleapis.com/blogger/v3/blogs/){blog_id}/posts"
+    params = {"isDraft": "true" if is_draft else "false"}
     headers = {
         "Authorization": f"Bearer {access_token}",
         "Content-Type": "application/json"
@@ -217,16 +216,16 @@ def blogger_paylas(access_token, blog_id, baslik, icerik, etiketler, meta_acikla
     post_data = {
         "title": baslik,
         "content": icerik,
-        "labels": etiketler,
-        "customMetaData": (meta_aciklama or baslik)[:150]
+        "labels": etiketler
     }
     return requests.post(url, headers=headers, params=params, json=post_data, timeout=30)
+
 
 # ================== ANA AKIŞ ==================
 def main():
     history = load_history()
 
-    # Zaman kontrolü
+    # Zaman kontrolü (80 Dakika)
     simdi = time.time()
     son_paylasim = history.get("son_paylasim_zamani", 0)
     gecen_dakika = (simdi - son_paylasim) / 60
@@ -280,6 +279,7 @@ def main():
 
             if not makale:
                 print("  ⏭️ İçerik üretilemedi, sonraki habere geçiliyor.")
+                time.sleep(5)
                 continue
 
             gorsel_url, fotografci = pexels_gorsel_bul(makale.get("gorsel_arama_terimi", ""))
@@ -294,9 +294,12 @@ def main():
                 icerik_html = gorsel_etiketi + icerik_html
 
             sonuc = blogger_paylas(
-                access_token, blog_id,
-                makale["baslik"], icerik_html,
-                makale["etiketler"], makale.get("meta_aciklama", ""),
+                access_token=access_token,
+                blog_id=blog_id,
+                baslik=makale["baslik"],
+                icerik=icerik_html,
+                etiketler=makale["etiketler"],
+                is_draft=TASLAK_OLARAK_KAYDET
             )
 
             if sonuc.status_code in (200, 201):
@@ -309,6 +312,9 @@ def main():
                 break
             else:
                 print(f"❌ Blogger Hatası: {sonuc.status_code} - {sonuc.text}")
+
+            # Gemini dakikalık kota (RPM) koruması için bekleme
+            time.sleep(20)
 
         except Exception as e:
             print(f"❌ İşlem Hatası: {e}")
