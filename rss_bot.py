@@ -171,7 +171,7 @@ SADECE şu JSON formatında cevap ver, Markdown kod bloğu (```json gibi) veya b
     for deneme in range(2):
         try:
             response = client.models.generate_content(
-                model="gemini-3.6-flash",
+                model="gemini-2.5-flash",
                 contents=prompt,
             )
             metin = response.text.strip()
@@ -208,19 +208,19 @@ SADECE şu JSON formatında cevap ver, Markdown kod bloğu (```json gibi) veya b
 
 # ================== BLOGGER GÖNDERİMİ ==================
 def blogger_paylas(access_token, blog_id, baslik, icerik, etiketler, meta_aciklama):
-    url = f"https://www.googleapis.com/blogger/v3/blogs/{blog_id}/posts/"
-    if TASLAK_OLARAK_KAYDET:
-        url += "?isDraft=true"
-    headers = {"Authorization": f"Bearer {access_token}", "Content-Type": "application/json"}
+    url = f"[https://www.googleapis.com/blogger/v3/blogs/](https://www.googleapis.com/blogger/v3/blogs/){blog_id}/posts"
+    params = {"isDraft": "true"} if TASLAK_OLARAK_KAYDET else {"isDraft": "false"}
+    headers = {
+        "Authorization": f"Bearer {access_token}",
+        "Content-Type": "application/json"
+    }
     post_data = {
-        "kind": "blogger#post",
-        "blog": {"id": blog_id},
         "title": baslik,
         "content": icerik,
         "labels": etiketler,
-        "searchDescription": (meta_aciklama or baslik)[:150],
+        "customMetaData": (meta_aciklama or baslik)[:150]
     }
-    return requests.post(url, headers=headers, json=post_data, timeout=30)
+    return requests.post(url, headers=headers, params=params, json=post_data, timeout=30)
 
 
 # ================== ANA AKIŞ ==================
