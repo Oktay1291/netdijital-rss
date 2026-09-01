@@ -1,9 +1,8 @@
 name: NetDijital RSS Bot
 
 on:
-  schedule:
-    # Her 2 saatte bir (00:00, 02:00, 04:00...) otomatik çalışır
-    - cron: '0 */2 * * *'
+  # schedule:
+  #   - cron: '0 */2 * * *'
   workflow_dispatch: # İstediğinizde GitHub Actions sekmesinden tek tıkla çalıştırma
 
 jobs:
