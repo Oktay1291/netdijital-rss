@@ -31,7 +31,6 @@ RSS_SOURCES = [
     {"url": "https://www.theverge.com/rss/index.xml", "kaynak": "The Verge"},
     {"url": "https://www.engadget.com/rss.xml", "kaynak": "Engadget"},
     {"url": "https://feeds.arstechnica.com/arstechnica/index", "kaynak": "Ars Technica"},
-    
     {"url": "https://thenextweb.com/feed", "kaynak": "The Next Web"},
     {"url": "https://www.digitaltrends.com/feed/", "kaynak": "Digital Trends"},
     {"url": "https://electrek.co/feed/", "kaynak": "Electrek"},
@@ -167,55 +166,48 @@ SADECE şu JSON formatında cevap ver, Markdown kod bloğu (```json gibi) veya b
   "gorsel_arama_terimi": "..."
 }}"""
 
-    try:
-        client = genai.Client(api_key=GEMINI_API_KEY)
-        response = client.models.generate_content(
-            model="gemini-2.5-flash",
-            contents=prompt,
-        )
-        metin = response.text.strip()
-        metin = metin.replace("```json", "").replace("```", "").strip()
-        veri = json.loads(metin)
+    for deneme in range(2):
+        try:
+            client = genai.Client(api_key=GEMINI_API_KEY)
+            response = client.models.generate_content(
+                model="gemini-2.5-flash",
+                contents=prompt,
+            )
+            metin = response.text.strip()
+            metin = metin.replace("```json", "").replace("```", "").strip()
+            veri = json.loads(metin)
 
-        etiketler = list(dict.fromkeys(veri.get("etiketler", [])))
-        if kaynak_adi not in etiketler:
-            etiketler.append(kaynak_adi)
-        havuz = GENEL_ETIKET_HAVUZU.copy()
-        random.shuffle(havuz)
-        for e in havuz:
-            if len(etiketler) >= 9:
-                break
-            if e not in etiketler:
-                etiketler.append(e)
-        veri["etiketler"] = etiketler[:14]
-        return veri, False
+            etiketler = list(dict.fromkeys(veri.get("etiketler", [])))
+            if kaynak_adi not in etiketler:
+                etiketler.append(kaynak_adi)
+            havuz = GENEL_ETIKET_HAVUZU.copy()
+            random.shuffle(havuz)
+            for e in havuz:
+                if len(etiketler) >= 9:
+                    break
+                if e not in etiketler:
+                    etiketler.append(e)
+            veri["etiketler"] = etiketler[:14]
+            return veri, False
 
-    except Exception as e:
-        hata_mesaji = str(e)
-        if "429" in hata_mesaji or "RESOURCE_EXHAUSTED" in hata_mesaji:
-            print("  🚫 Gemini günlük/dakikalık kota sınırına ulaşıldı (429).")
-            return None, True
-        print(f"  ⚠️ Gemini makale üretme hatası: {e}")
-        return None, False
+        except Exception as e:
+            hata_mesaji = str(e)
+            if "429" in hata_mesaji or "RESOURCE_EXHAUSTED" in hata_mesaji:
+                print("  🚫 Gemini günlük/dakikalık kota sınırına ulaşıldı (429).")
+                return None, True
+            if "503" in hata_mesaji and deneme == 0:
+                print("  ⚠️ Gemini sunucusu meşgul (503), 5 saniye beklenip tekrar deneniyor...")
+                time.sleep(5)
+                continue
+            print(f"  ⚠️ Gemini makale üretme hatası: {e}")
+            return None, False
+
+    return None, False
 
 
 # ================== BLOGGER GÖNDERİMİ ==================
 def blogger_paylas(access_token, blog_id, baslik, icerik, etiketler, meta_aciklama):
-    # =================== BLOGGER GÖNDERİMİ ===================
-def blogger_paylas(access_token, blog_id, baslik, icerik, etiketler, meta_aciklama):
-    url = f"https://www.googleapis.com/blogger/v3/blogs/{blog_id}/posts/"
-    if TASLAK_OLARAK_KAYDET:
-        url += "?isDraft=true"
-    headers = {"Authorization": f"Bearer {access_token}", "Content-Type": "application/json"}
-    post_data = {
-        "kind": "blogger#post",
-        "blog": {"id": blog_id},
-        "title": baslik,
-        "content": icerik,
-        "labels": etiketler,
-        "searchDescription": (meta_aciklama or baslik)[:150],
-    }
-    return requests.post(url, headers=headers, json=post_data, timeout=30)
+    url = f"[https://www.googleapis.com/blogger/v3/blogs/](https://www.googleapis.com/blogger/v3/blogs/){blog_id}/posts/"
     if TASLAK_OLARAK_KAYDET:
         url += "?isDraft=true"
     headers = {"Authorization": f"Bearer {access_token}", "Content-Type": "application/json"}
