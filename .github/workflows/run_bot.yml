@@ -1,41 +1,39 @@
-name: Otomatik Haber Paylaşımı
+name: NetDijital RSS Bot
 
 on:
   schedule:
-    # Günde 18 kez, düzenli aralıklarla çalışır (Gemini günlük 20 istek kotasına takılmaz)
-    - cron: "0 0,1,3,4,6,7,9,10,12,13,15,16,18,19,21,22 * * *"
-  workflow_dispatch: {}
-
-permissions:
-  contents: write
+    # Her 2 saatte bir (00:00, 02:00, 04:00...) otomatik çalışır
+    - cron: '0 */2 * * *'
+  workflow_dispatch: # İstediğinizde GitHub Actions sekmesinden tek tıkla çalıştırma
 
 jobs:
-  paylas:
+  run-bot:
     runs-on: ubuntu-latest
     steps:
-      - name: Repoyu indir
+      - name: Repoyu Klonla
         uses: actions/checkout@v4
 
-      - name: Python kur
+      - name: Python Kur
         uses: actions/setup-python@v5
         with:
-          python-version: "3.11"
+          python-version: '3.11'
 
-      - name: Kütüphaneleri kur
-        run: pip install -r requirements.txt
+      - name: Bağımlılıkları Yükle
+        run: |
+          pip install -r requirements.txt
 
-      - name: Scripti çalıştır
+      - name: Botu Çalıştır
         env:
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
           BLOGGER_CLIENT_ID: ${{ secrets.BLOGGER_CLIENT_ID }}
           BLOGGER_CLIENT_SECRET: ${{ secrets.BLOGGER_CLIENT_SECRET }}
           BLOGGER_REFRESH_TOKEN: ${{ secrets.BLOGGER_REFRESH_TOKEN }}
-          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
           PEXELS_API_KEY: ${{ secrets.PEXELS_API_KEY }}
         run: python rss_bot.py
 
-      - name: Geçmiş dosyasını commit et
+      - name: Geçmiş Dosyasını Commit Et
         run: |
           git config --global user.name "github-actions[bot]"
           git config --global user.email "github-actions[bot]@users.noreply.github.com"
-          git add -A
-          git diff --staged --quiet || (git commit -m "Paylaşım geçmişi güncellendi" && git push)
+          git add posted_history.json
+          git diff --quiet && git diff --staged --quiet || (git commit -m "Auto: Güncellenen geçmiş dosyası [skip ci]" && git push)
