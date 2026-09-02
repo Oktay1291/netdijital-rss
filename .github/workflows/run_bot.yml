@@ -1,17 +1,16 @@
 name: NetDijital RSS Bot
-
 on:
   schedule:
     - cron: '0 */2 * * *'
   workflow_dispatch:
-
 permissions:
   contents: write
-
+concurrency:
+  group: netdijital-rss-bot
+  cancel-in-progress: false
 jobs:
   run-bot:
     runs-on: ubuntu-latest
-
     steps:
       - name: Repoyu Klonla
         uses: actions/checkout@v4
@@ -20,6 +19,7 @@ jobs:
         uses: actions/setup-python@v5
         with:
           python-version: '3.11'
+          cache: 'pip'
 
       - name: Bağımlılıkları Yükle
         run: |
@@ -37,12 +37,24 @@ jobs:
 
       - name: Geçmiş Dosyasını Commit Et
         run: |
+          set -e
           git config --global user.name "github-actions[bot]"
           git config --global user.email "github-actions[bot]@users.noreply.github.com"
 
+          if [ ! -f posted_history.json ]; then
+            echo "posted_history.json bulunamadi, commit atlaniyor."
+            exit 0
+          fi
+
           git add posted_history.json
 
-          git diff --cached --quiet || (
-            git commit -m "Auto: geçmiş güncellendi [skip ci]"
-            git push
-          )
+          if git diff --cached --quiet; then
+            echo "Degisiklik yok, commit atlaniyor."
+            exit 0
+          fi
+
+          git commit -m "Auto: gecmis guncellendi [skip ci]"
+
+          # Ayni anda baska bir run repoyu guncellemis olabilir, push oncesi senkronize ol
+          git pull --rebase origin "${GITHUB_REF_NAME}"
+          git push
