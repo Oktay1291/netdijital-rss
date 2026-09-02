@@ -207,7 +207,7 @@ SADECE şu JSON formatında yanıt ver, Markdown kod bloğu (```json gibi) veya 
 
 # ================== BLOGGER GÖNDERİMİ ==================
 def blogger_paylas(access_token, blog_id, baslik, icerik, etiketler, is_draft=True):
-    url = f"[https://www.googleapis.com/blogger/v3/blogs/](https://www.googleapis.com/blogger/v3/blogs/){blog_id}/posts"
+    url = f"https://www.googleapis.com/blogger/v3/blogs/{blog_id}/posts"
     params = {"isDraft": "true" if is_draft else "false"}
     headers = {
         "Authorization": f"Bearer {access_token}",
