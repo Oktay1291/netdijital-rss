@@ -40,7 +40,7 @@ GENEL_ETIKET_HAVUZU = [
 ]
 
 def get_access_token(client_id, client_secret, refresh_token):
-    blogs_url = "https://www.googleapis.com/blogger/v3/users/self/blogs"
+    token_url = "https://oauth2.googleapis.com/token"
     payload = {
         "client_id": client_id,
         "client_secret": client_secret,
