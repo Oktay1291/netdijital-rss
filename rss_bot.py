@@ -21,9 +21,11 @@ MAX_GECMIS_LINK = 2000
 MIN_PAYLASIM_ARALIGI_DAKIKA = 80
 TASLAK_OLARAK_KAYDET = True
 
-# Not: Gemini tarafında kullanılabilir/desteklenen güncel model.
-# "gemini-3.6-flash" gibi var olmayan bir model adı verirsen API 404/NotFound döner.
-GEMINI_MODEL = "gemini-2.5-flash"
+# Not: Google, eski client.models.generate_content() + gemini-2.5-flash kombinasyonunu
+# yeni kullanicilar icin kapatti ve "Interactions API" (client.interactions.create) kullanimini
+# oneriyor. Guncel model adi da degisebiliyor; asagidaki liste eskiden yeniye fallback sirasi.
+GEMINI_MODEL = "gemini-3.7-flash"
+GEMINI_MODEL_FALLBACKS = ["gemini-3.7-flash", "gemini-3.6-flash", "gemini-3.5-flash"]
 
 RSS_SOURCES = [
     {"url": "https://techcrunch.com/feed/", "kaynak": "TechCrunch"},
@@ -168,50 +170,61 @@ Kurallar:
 
     client = genai.Client(api_key=GEMINI_API_KEY)
 
-    for deneme in range(2):
-        try:
-            response = client.models.generate_content(
-                model=GEMINI_MODEL,
-                contents=prompt,
-            )
-            metin = response.text.strip()
-            metin = metin.replace("```json", "").replace("```", "").strip()
-            veri = json.loads(metin)
+    modeller = GEMINI_MODEL_FALLBACKS if GEMINI_MODEL_FALLBACKS else [GEMINI_MODEL]
 
-            # Zorunlu alanlar eksikse taslagi atla (KeyError yerine kontrollu red)
-            if not veri.get("baslik") or not veri.get("icerik_html"):
-                print("Gemini yaniti eksik alan icerdi, atlaniyor.")
+    for model_adi in modeller:
+        for deneme in range(2):
+            try:
+                # Eski client.models.generate_content() yerine guncel Interactions API.
+                interaction = client.interactions.create(
+                    model=model_adi,
+                    input=prompt,
+                )
+                metin = (interaction.output_text or "").strip()
+                metin = metin.replace("```json", "").replace("```", "").strip()
+                veri = json.loads(metin)
+
+                # Zorunlu alanlar eksikse taslagi atla (KeyError yerine kontrollu red)
+                if not veri.get("baslik") or not veri.get("icerik_html"):
+                    print("Gemini yaniti eksik alan icerdi, atlaniyor.")
+                    return None, False
+
+                etiketler = list(dict.fromkeys(veri.get("etiketler", [])))
+                if kaynak_adi not in etiketler:
+                    etiketler.append(kaynak_adi)
+                havuz = GENEL_ETIKET_HAVUZU.copy()
+                random.shuffle(havuz)
+                for e in havuz:
+                    if len(etiketler) >= 9:
+                        break
+                    if e not in etiketler:
+                        etiketler.append(e)
+                veri["etiketler"] = etiketler[:14]
+
+                if model_adi != modeller[0]:
+                    print(f"Not: '{modeller[0]}' calismadi, '{model_adi}' ile uretildi.")
+                return veri, False
+
+            except json.JSONDecodeError as e:
+                print(f"Gemini yaniti JSON olarak parse edilemedi: {e}")
                 return None, False
 
-            etiketler = list(dict.fromkeys(veri.get("etiketler", [])))
-            if kaynak_adi not in etiketler:
-                etiketler.append(kaynak_adi)
-            havuz = GENEL_ETIKET_HAVUZU.copy()
-            random.shuffle(havuz)
-            for e in havuz:
-                if len(etiketler) >= 9:
-                    break
-                if e not in etiketler:
-                    etiketler.append(e)
-            veri["etiketler"] = etiketler[:14]
-            return veri, False
+            except Exception as e:
+                hata_mesaji = str(e)
+                if "429" in hata_mesaji or "RESOURCE_EXHAUSTED" in hata_mesaji:
+                    print("Gemini kota siniri (429).")
+                    return None, True
+                if "404" in hata_mesaji or "NOT_FOUND" in hata_mesaji:
+                    print(f"Model '{model_adi}' artik kullanilamiyor, siradaki modele geciliyor.")
+                    break  # ic donguden cik, disaridaki 'modeller' listesinde bir sonrakine gec
+                if "503" in hata_mesaji and deneme == 0:
+                    print("Gemini 503 mesgul, 5 sn bekleniyor...")
+                    time.sleep(5)
+                    continue
+                print(f"Gemini hatasi: {e}")
+                return None, False
 
-        except json.JSONDecodeError as e:
-            print(f"Gemini yaniti JSON olarak parse edilemedi: {e}")
-            return None, False
-
-        except Exception as e:
-            hata_mesaji = str(e)
-            if "429" in hata_mesaji or "RESOURCE_EXHAUSTED" in hata_mesaji:
-                print("Gemini kota siniri (429).")
-                return None, True
-            if "503" in hata_mesaji and deneme == 0:
-                print("Gemini 503 mesgul, 5 sn bekleniyor...")
-                time.sleep(5)
-                continue
-            print(f"Gemini hatasi: {e}")
-            return None, False
-
+    print("Denenen hicbir Gemini modeli calismadi.")
     return None, False
 
 
