@@ -21,8 +21,8 @@ MAX_GECMIS_LINK = 2000
 MIN_PAYLASIM_ARALIGI_DAKIKA = 80
 TASLAK_OLARAK_KAYDET = True
 
-GEMINI_MODEL = "gemini-2.5-flash"
-GEMINI_MODEL_FALLBACKS = ["gemini-2.5-flash", "gemini-1.5-flash"]
+GEMINI_MODEL = "gemini-3.7-flash"
+GEMINI_MODEL_FALLBACKS = ["gemini-3.7-flash", "gemini-3.6-flash", "gemini-3.5-flash"]
 
 RSS_SOURCES = [
     {"url": "https://www.engadget.com/rss.xml", "kaynak": "Engadget"},
