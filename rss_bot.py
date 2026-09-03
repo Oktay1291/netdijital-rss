@@ -21,24 +21,16 @@ MAX_GECMIS_LINK = 2000
 MIN_PAYLASIM_ARALIGI_DAKIKA = 80
 TASLAK_OLARAK_KAYDET = True
 
-# Not: Google, eski client.models.generate_content() + gemini-2.5-flash kombinasyonunu
-# yeni kullanicilar icin kapatti ve "Interactions API" (client.interactions.create) kullanimini
-# oneriyor. Guncel model adi da degisebiliyor; asagidaki liste eskiden yeniye fallback sirasi.
-GEMINI_MODEL = "gemini-3.7-flash"
-GEMINI_MODEL_FALLBACKS = ["gemini-3.7-flash", "gemini-3.6-flash", "gemini-3.5-flash"]
+GEMINI_MODEL = "gemini-2.5-flash"
+GEMINI_MODEL_FALLBACKS = ["gemini-2.5-flash", "gemini-1.5-flash"]
 
 RSS_SOURCES = [
-    {"url": "https://techcrunch.com/feed/", "kaynak": "TechCrunch"},
-    {"url": "https://www.theverge.com/rss/index.xml", "kaynak": "The Verge"},
     {"url": "https://www.engadget.com/rss.xml", "kaynak": "Engadget"},
-    {"url": "https://www.arstechnica.com/arstechnica/index", "kaynak": "Ars Technica"},
     {"url": "https://thenextweb.com/feed", "kaynak": "The Next Web"},
     {"url": "https://www.digitaltrends.com/feed/", "kaynak": "Digital Trends"},
     {"url": "https://electrek.co/feed/", "kaynak": "Electrek"},
     {"url": "https://www.androidpolice.com/feed/", "kaynak": "Android Police"},
     {"url": "https://bgr.com/feed/", "kaynak": "BGR"},
-    {"url": "https://www.tomshardware.com/rss.xml", "kaynak": "Tom's Hardware"},
-    {"url": "https://readwrite.com/feed/", "kaynak": "ReadWrite"},
 ]
 
 GENEL_ETIKET_HAVUZU = [
@@ -169,13 +161,11 @@ Kurallar:
 }}"""
 
     client = genai.Client(api_key=GEMINI_API_KEY)
-
     modeller = GEMINI_MODEL_FALLBACKS if GEMINI_MODEL_FALLBACKS else [GEMINI_MODEL]
 
     for model_adi in modeller:
-        for deneme in range(2):
+        for deneme in range(3):
             try:
-                # Eski client.models.generate_content() yerine guncel Interactions API.
                 interaction = client.interactions.create(
                     model=model_adi,
                     input=prompt,
@@ -184,7 +174,6 @@ Kurallar:
                 metin = metin.replace("```json", "").replace("```", "").strip()
                 veri = json.loads(metin)
 
-                # Zorunlu alanlar eksikse taslagi atla (KeyError yerine kontrollu red)
                 if not veri.get("baslik") or not veri.get("icerik_html"):
                     print("Gemini yaniti eksik alan icerdi, atlaniyor.")
                     return None, False
@@ -212,11 +201,17 @@ Kurallar:
             except Exception as e:
                 hata_mesaji = str(e)
                 if "429" in hata_mesaji or "RESOURCE_EXHAUSTED" in hata_mesaji:
-                    print("Gemini kota siniri (429).")
-                    return None, True
+                    if deneme < 2:
+                        bekleme_suresi = 45 * (deneme + 1)
+                        print(f"Gemini dakikalik kota (429). {bekleme_suresi} sn beklenip tekrar denenecek...")
+                        time.sleep(bekleme_suresi)
+                        continue
+                    else:
+                        print("Gemini kota siniri (429) asilamadi.")
+                        return None, True
                 if "404" in hata_mesaji or "NOT_FOUND" in hata_mesaji:
-                    print(f"Model '{model_adi}' artik kullanilamiyor, siradaki modele geciliyor.")
-                    break  # ic donguden cik, disaridaki 'modeller' listesinde bir sonrakine gec
+                    print(f"Model '{model_adi}' kullanilamiyor, siradakine geciliyor.")
+                    break
                 if "503" in hata_mesaji and deneme == 0:
                     print("Gemini 503 mesgul, 5 sn bekleniyor...")
                     time.sleep(5)
@@ -224,7 +219,7 @@ Kurallar:
                 print(f"Gemini hatasi: {e}")
                 return None, False
 
-    print("Denenen hicbir Gemini modeli calismadi.")
+    print("Denenen modellerden sonuc alinamadi.")
     return None, False
 
 
