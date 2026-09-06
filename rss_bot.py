@@ -22,12 +22,10 @@ BLOGGER_REFRESH_TOKEN = os.environ.get("BLOGGER_REFRESH_TOKEN")
 BLOGGER_CLIENT_ID = os.environ.get("BLOGGER_CLIENT_ID")
 BLOGGER_CLIENT_SECRET = os.environ.get("BLOGGER_CLIENT_SECRET")
 
-# Kararlı ve kotayı boğmayan model
 GEMINI_MODEL = "gemini-2.5-flash"
 HAFIZA_DOSYASI = "posted_history.json"
 MAX_HABER = 1
 
-# Güvenilir RSS Kaynakları
 RSS_SOURCES = [
     {"url": "https://www.engadget.com/rss.xml", "kategori": "Teknoloji"},
     {"url": "https://www.theverge.com/rss/index.xml", "kategori": "Teknoloji"},
@@ -53,12 +51,12 @@ def hafiza_oku():
 
 def hafiza_kaydet(hafiza, link):
     hafiza["linkler"].append(link)
-    hafiza["linkler"] = hafiza["linkler"][-500:]  # Son 500 linki tut
+    hafiza["linkler"] = hafiza["linkler"][-500:]
     with open(HAFIZA_DOSYASI, "w", encoding="utf-8") as f:
         json.dump(hafiza, f, ensure_ascii=False, indent=2)
 
 # ============================================================
-# GÖRSEL TEMİNİ (OG:IMAGE - TELİF VE API SORUNSUZ)
+# GÖRSEL BULUCU
 # ============================================================
 def kaynak_gorsel_bul(haber_url):
     try:
@@ -75,29 +73,26 @@ def kaynak_gorsel_bul(haber_url):
     return None
 
 # ============================================================
-# GEMINI İÇERİK ÜRETİCİSİ (KOTA DOSTU VE SAĞLAM JSON)
+# GEMINI İÇERİK ÜRETİCİ
 # ============================================================
 def haber_yazdir(baslik, ozet, kategori, kaynak_url):
     client = genai.Client(api_key=GEMINI_API_KEY)
-    
-    prompt = f"""Sen deneyimli bir teknoloji haber editörüsün. Aşağıdaki haberi baz alarak tamamen özgün, profesyonel ve SEO uyumlu bir Türkçe haber oluştur.
 
-Başlık: {baslik}
-Özet: {ozet}
-Kategori: {kategori}
-
-Kurallar:
-1. Uzunluk 750-1000 kelime arasında akıcı ve doyurucu olsun.
-2. Kesinlikle <h1> veya <html>/<body> etiketleri kullanma. Yalnızca <h2>, <h3>, <p>, <ul>, <li>, <strong> kullan.
-3. En az 4 adet <h2> başlığı ve önemli kısımlarda maddeli listeler barındırsın.
-4. Çıktıyı SADECE geçerli bir JSON objesi olarak ver.
-
-JSON Formatı:
-{{
-  "baslik": "SEO Uyumlu Çarpıcı Başlık",
-  "icerik": "<h2>Giriş</h2><p>Haber metni...</p>",
-  "etiketler": ["{kategori}", "Teknoloji", "Güncel", "Haber"]
-}}"""
+    prompt = (
+        "Sen deneyimli bir teknoloji haber editörüsün. Aşağıdaki haberi baz alarak "
+        "tamamen özgün, profesyonel ve SEO uyumlu bir Türkçe haber oluştur.\n\n"
+        f"Başlık: {baslik}\n"
+        f"Özet: {ozet}\n"
+        f"Kategori: {kategori}\n\n"
+        "Kurallar:\n"
+        "1. Uzunluk 750-1000 kelime arasında akıcı ve doyurucu olsun.\n"
+        "2. Kesinlikle <h1> veya <html>/<body> etiketleri kullanma. Yalnızca <h2>, <h3>, <p>, <ul>, <li>, <strong> kullan.\n"
+        "3. En az 4 adet <h2> başlığı ve önemli kısımlarda maddeli listeler barındırsın.\n"
+        "4. Çıktıyı SADECE geçerli bir JSON objesi olarak ver.\n\n"
+        'JSON Formatı: {"baslik": "SEO Uyumlu Başlık", "icerik": "<h2>Giriş</h2><p>Haber metni...</p>", "etiketler": ["'
+        + kategori
+        + '", "Teknoloji", "Güncel"]}'
+    )
 
     try:
         response = client.models.generate_content(
@@ -109,33 +104,25 @@ JSON Formatı:
             )
         )
         temiz = response.text.strip().removeprefix("```json").removeprefix("```").removesuffix("```").strip()
-        data = json.loads(temiz)
-        return data
+        return json.loads(temiz)
     except Exception as e:
         print(f"Gemini İçerik Hatası: {e}")
         return None
 
 # ============================================================
-# BLOGGER RESMİ BAĞLANTISI (403 VE TOKEN HATASINI BİTİRİR)
+# BLOGGER RESMİ BAĞLANTISI
 # ============================================================
 def blogger_servisi():
+    token_adresi = "[https://oauth2.googleapis.com/token](https://oauth2.googleapis.com/token)"
+    kapsam = ["[https://www.googleapis.com/auth/blogger](https://www.googleapis.com/auth/blogger)"]
+
     creds = Credentials(
         token=None,
         refresh_token=BLOGGER_REFRESH_TOKEN,
-        token_uri="https://oauth2.googleapis.com/token",
+        token_uri=token_adresi,
         client_id=BLOGGER_CLIENT_ID,
         client_secret=BLOGGER_CLIENT_SECRET,
-        def blogger_servisi():
-    creds = Credentials(
-        token=None,
-        refresh_token=BLOGGER_REFRESH_TOKEN,
-        token_uri="https://oauth2.googleapis.com/token",
-        client_id=BLOGGER_CLIENT_ID,
-        client_secret=BLOGGER_CLIENT_SECRET,
-        scopes=["https://www.googleapis.com/auth/blogger"]
-    )
-    creds.refresh(Request())
-    return build("blogger", "v3", credentials=creds, cache_discovery=False)
+        scopes=kapsam
     )
     creds.refresh(Request())
     return build("blogger", "v3", credentials=creds, cache_discovery=False)
@@ -157,12 +144,11 @@ Kaynak: <a href="{html.escape(kaynak_url, quote=True)}" target="_blank" rel="nof
         "labels": veri.get("etiketler", ["Teknoloji"])
     }
 
-    # isDraft=False -> Doğrudan SİTEDE YAYINLAR!
     res = service.posts().insert(blogId=BLOG_ID, body=govde, isDraft=False).execute()
     return res.get("url")
 
 # ============================================================
-# ÇALIŞTIRICI
+# ANA ÇALIŞTIRICI
 # ============================================================
 def main():
     if not all([BLOG_ID, GEMINI_API_KEY, BLOGGER_REFRESH_TOKEN, BLOGGER_CLIENT_ID, BLOGGER_CLIENT_SECRET]):
