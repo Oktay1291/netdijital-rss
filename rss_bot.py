@@ -223,7 +223,7 @@ def llm_ile_makale_uret(orijinal_baslik, orijinal_ozet, kaynak_adi):
 
 def blogger_paylas(access_token, blog_id, baslik, icerik, etiketler, is_draft=False):
     clean_blog_id = str(blog_id).strip()
-    post_url = f"https://www.googleapis.com/blogger/v3/blogs/{clean_blog_id}/posts"
+    post_url = f"https://www.googleapis.com/blogger/v3/blogs/{clean_blog_id}/posts/"
     
     headers = {
         "Authorization": f"Bearer {access_token}",
@@ -231,17 +231,16 @@ def blogger_paylas(access_token, blog_id, baslik, icerik, etiketler, is_draft=Fa
     }
     
     params = {
-        "isDraft": bool(is_draft)
+        "isDraft": "false"
     }
     
     post_data = {
         "title": baslik,
         "content": icerik,
-        "labels": etiketler if etiketler else []
+        "labels": etiketler if isinstance(etiketler, list) else []
     }
     
     return requests.post(post_url, headers=headers, params=params, json=post_data, timeout=30)
-
 
 def main():
     history = load_history()
