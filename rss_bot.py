@@ -1,4 +1,5 @@
 import os
+import sys
 import json
 import random
 import time
@@ -19,10 +20,10 @@ PEXELS_API_KEY = os.getenv("PEXELS_API_KEY")
 HISTORY_FILE = "posted_history.json"
 MAX_GECMIS_LINK = 2000
 
-MIN_PAYLASIM_ARALIGI_DAKIKA = 80
 TASLAK_OLARAK_KAYDET = False
 
-GEMINI_MODEL = "gemini-3.6-flash"
+# Model adi resmi guncel flash surumune sabitlendi
+GEMINI_MODEL = "gemini-1.5-flash"
 
 RSS_SOURCES = [
     {"url": "https://www.engadget.com/rss.xml", "kaynak": "Engadget"},
@@ -163,19 +164,18 @@ def llm_ile_makale_uret(orijinal_baslik, orijinal_ozet, kaynak_adi):
 
     client = genai.Client(api_key=GEMINI_API_KEY)
 
-for deneme in range(3):
-    try:
-        import time
-        time.sleep(5)  # Kotaya takılmamak için istekler arasına bekleme
-        
-        response = client.models.generate_content(
-            model=GEMINI_MODEL,
-            contents=prompt,
-            config=types.GenerateContentConfig(
-                temperature=0.6,
-                response_mime_type="application/json",
-            ),
-        )
+    for deneme in range(3):
+        try:
+            time.sleep(5)  # Kotaya takılmamak için bekleme
+
+            response = client.models.generate_content(
+                model=GEMINI_MODEL,
+                contents=prompt,
+                config=types.GenerateContentConfig(
+                    temperature=0.6,
+                    response_mime_type="application/json",
+                ),
+            )
             metin = (response.text or "").strip()
             metin = metin.removeprefix("```json").removeprefix("```").removesuffix("```").strip()
             veri = json.loads(metin)
@@ -223,37 +223,32 @@ for deneme in range(3):
     print("Denenen modelden sonuc alinamadi.")
     return None, False
 
+
 def blogger_paylas(access_token, blog_id, baslik, icerik, etiketler, is_draft=False):
     clean_blog_id = str(blog_id).strip()
-    post_url = f"https://www.googleapis.com/blogger/v3/blogs/{clean_blog_id}/posts/"
-    
+    post_url = f"[https://www.googleapis.com/blogger/v3/blogs/](https://www.googleapis.com/blogger/v3/blogs/){clean_blog_id}/posts/"
+
     headers = {
         "Authorization": f"Bearer {access_token}",
         "Content-Type": "application/json"
     }
-    
+
     params = {
-        "isDraft": "false"
+        "isDraft": "true" if is_draft else "false"
     }
-    
+
     post_data = {
         "title": baslik,
         "content": icerik,
         "labels": etiketler if isinstance(etiketler, list) else []
     }
-    
+
     return requests.post(post_url, headers=headers, params=params, json=post_data, timeout=30)
+
 
 def main():
     history = load_history()
-
     simdi = time.time()
-    son_paylasim = history.get("son_paylasim_zamani", 0)
-    gecen_dakika = (simdi - son_paylasim) / 60
-    if son_paylasim > 0 and gecen_dakika < MIN_PAYLASIM_ARALIGI_DAKIKA:
-        kalan = round(MIN_PAYLASIM_ARALIGI_DAKIKA - gecen_dakika, 1)
-        print(f"Bekleme suresi aktif ({round(gecen_dakika, 1)} dk gecti, {kalan} dk kaldi).")
-        return
 
     print("Kimlik dogrulamasi yapiliyor...")
     access_token = get_access_token(CLIENT_ID, CLIENT_SECRET, REFRESH_TOKEN)
@@ -268,83 +263,85 @@ def main():
     toplam_kaynak = len(RSS_SOURCES)
     mevcut_index = history.get("son_kaynak_index", 0) % toplam_kaynak
 
-    secilen_kaynak = RSS_SOURCES[mevcut_index]
-    rss_url = secilen_kaynak["url"]
-    kaynak_adi = secilen_kaynak["kaynak"]
+    # Kaynakları mevcut indeksten başlayacak şekilde sıraya koyar
+    sirali_kaynaklar = [
+        ((mevcut_index + i) % toplam_kaynak, RSS_SOURCES[(mevcut_index + i) % toplam_kaynak])
+        for i in range(toplam_kaynak)
+    ]
 
-    print(f"Taranacak kaynak [{mevcut_index + 1}/{toplam_kaynak}]: {kaynak_adi}")
+    for idx, kaynak in sirali_kaynaklar:
+        kaynak_adi = kaynak["kaynak"]
+        rss_url = kaynak["url"]
+        print(f"Taranan kaynak [{idx + 1}/{toplam_kaynak}]: {kaynak_adi}")
 
-    history["son_kaynak_index"] = (mevcut_index + 1) % toplam_kaynak
-    save_history(history)
+        feed = fetch_feed(rss_url, kaynak_adi)
 
-    feed = fetch_feed(rss_url, kaynak_adi)
-    paylasildi = False
-
-    for entry in feed.entries[:10]:
-        link = getattr(entry, "link", None)
-        if not link or link in history["yayinlanan_linkler"]:
-            continue
-
-        try:
-            orijinal_baslik = getattr(entry, "title", "") or "(Basliksiz)"
-            ham_ozet = getattr(entry, "summary", "")
-            orijinal_ozet = BeautifulSoup(ham_ozet, "html.parser").get_text(separator=" ", strip=True)
-
-            print(f"Gemini uretimi basladi: {orijinal_baslik}")
-            makale, kota_asildi = llm_ile_makale_uret(orijinal_baslik, orijinal_ozet, kaynak_adi)
-
-            if kota_asildi:
-                print("Kota bitti, donguden cikiliyor.")
-                break
-
-            if not makale:
-                time.sleep(5)
+        for entry in feed.entries[:10]:
+            link = getattr(entry, "link", None)
+            if not link or link in history["yayinlanan_linkler"]:
                 continue
 
-            gorsel_url, fotografci = pexels_gorsel_bul(makale.get("gorsel_arama_terimi", ""))
+            try:
+                orijinal_baslik = getattr(entry, "title", "") or "(Basliksiz)"
+                ham_ozet = getattr(entry, "summary", "")
+                orijinal_ozet = BeautifulSoup(ham_ozet, "html.parser").get_text(separator=" ", strip=True)
 
-            icerik_html = makale.get("icerik_html", "")
-            baslik_guvenli = html.escape(makale.get("baslik", orijinal_baslik), quote=True)
+                print(f"Gemini uretimi basladi: {orijinal_baslik}")
+                makale, kota_asildi = llm_ile_makale_uret(orijinal_baslik, orijinal_ozet, kaynak_adi)
 
-            if gorsel_url:
-                fotografci_guvenli = html.escape(fotografci or "Pexels", quote=True)
-                gorsel_etiketi = (
-                    f"<p><img src='{html.escape(gorsel_url, quote=True)}' alt='{baslik_guvenli}' "
-                    f"style='max-width:100%; height:auto; border-radius:8px;'/></p>"
-                    f"<p><small>Gorsel: Pexels / {fotografci_guvenli}</small></p>"
+                if kota_asildi:
+                    print("Kota bitti, program sonlandiriliyor.")
+                    return
+
+                if not makale:
+                    time.sleep(5)
+                    continue
+
+                gorsel_url, fotografci = pexels_gorsel_bul(makale.get("gorsel_arama_terimi", ""))
+
+                icerik_html = makale.get("icerik_html", "")
+                baslik_guvenli = html.escape(makale.get("baslik", orijinal_baslik), quote=True)
+
+                if gorsel_url:
+                    fotografci_guvenli = html.escape(fotografci or "Pexels", quote=True)
+                    gorsel_etiketi = (
+                        f"<p><img src='{html.escape(gorsel_url, quote=True)}' alt='{baslik_guvenli}' "
+                        f"style='max-width:100%; height:auto; border-radius:8px;'/></p>"
+                        f"<p><small>Gorsel: Pexels / {fotografci_guvenli}</small></p>"
+                    )
+                    icerik_html = gorsel_etiketi + icerik_html
+
+                etiketler = makale.get("etiketler", [kaynak_adi])
+
+                sonuc = blogger_paylas(
+                    access_token=access_token,
+                    blog_id=blog_id,
+                    baslik=makale.get("baslik", orijinal_baslik),
+                    icerik=icerik_html,
+                    etiketler=etiketler,
+                    is_draft=TASLAK_OLARAK_KAYDET,
                 )
-                icerik_html = gorsel_etiketi + icerik_html
 
-            etiketler = makale.get("etiketler", [kaynak_adi])
+                if sonuc.status_code in (200, 201):
+                    durum = "taslak" if TASLAK_OLARAK_KAYDET else "yayin"
+                    print(f"Basarili ({durum}) [{kaynak_adi}]: {makale.get('baslik', orijinal_baslik)}")
+                    history["yayinlanan_linkler"].append(link)
+                    history["son_paylasim_zamani"] = simdi
+                    # Bir sonraki calismada siradaki kaynağa geç
+                    history["son_kaynak_index"] = (idx + 1) % toplam_kaynak
+                    save_history(history)
+                    print("Saatlik 1 haber kotasi tamamlandi. Bot basariyla kapaniyor.")
+                    return
+                else:
+                    print(f"Blogger API Hatasi: {sonuc.status_code} - {sonuc.text}")
 
-            sonuc = blogger_paylas(
-                access_token=access_token,
-                blog_id=blog_id,
-                baslik=makale.get("baslik", orijinal_baslik),
-                icerik=icerik_html,
-                etiketler=etiketler,
-                is_draft=TASLAK_OLARAK_KAYDET,
-            )
+                time.sleep(10)
 
-            if sonuc.status_code in (200, 201):
-                durum = "taslak" if TASLAK_OLARAK_KAYDET else "yayin"
-                print(f"Basarili ({durum}) [{kaynak_adi}]: {makale.get('baslik', orijinal_baslik)}")
-                history["yayinlanan_linkler"].append(link)
-                history["son_paylasim_zamani"] = simdi
-                save_history(history)
-                paylasildi = True
-                break
-            else:
-                print(f"Blogger API Hatasi: {sonuc.status_code} - {sonuc.text}")
+            except Exception as e:
+                print(f"Dongu hatasi: {e}")
+                print(traceback.format_exc())
 
-            time.sleep(20)
-
-        except Exception as e:
-            print(f"Dongu hatasi: {e}")
-            print(traceback.format_exc())
-
-    if not paylasildi:
-        print(f"{kaynak_adi} kaynagindan paylasim yapilamadi.")
+    print("Uygun yeni haber bulunamadi veya tum kaynaklar tarandi.")
 
 
 if __name__ == "__main__":
