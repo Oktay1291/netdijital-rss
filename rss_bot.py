@@ -8,6 +8,7 @@ import urllib.request
 import requests
 import feedparser
 from google import genai
+from google.genai import types
 from bs4 import BeautifulSoup
 
 CLIENT_ID = os.getenv("BLOGGER_CLIENT_ID")
@@ -19,11 +20,9 @@ HISTORY_FILE = "posted_history.json"
 MAX_GECMIS_LINK = 2000
 
 MIN_PAYLASIM_ARALIGI_DAKIKA = 80
-TASLAK_OLARAK_KAYDET = True
+TASLAK_OLARAK_KAYDET = False
 
-GEMINI_MODEL = "gemini-3.7-flash"
-GEMINI_MODEL_FALLBACKS = ["gemini-3.7-flash", "gemini-3.6-flash", "gemini-3.5-flash"]
-
+GEMINI_MODEL = "gemini-2.5-flash"
 
 RSS_SOURCES = [
     {"url": "https://www.engadget.com/rss.xml", "kaynak": "Engadget"},
@@ -46,6 +45,7 @@ def get_access_token(client_id, client_secret, refresh_token):
         "client_secret": client_secret,
         "refresh_token": refresh_token,
         "grant_type": "refresh_token",
+        "scope": "https://www.googleapis.com/auth/blogger",
     }
     try:
         r = requests.post(token_url, data=payload, timeout=15)
@@ -140,91 +140,90 @@ def llm_ile_makale_uret(orijinal_baslik, orijinal_ozet, kaynak_adi):
         print("GEMINI_API_KEY eksik.")
         return None, False
 
-    prompt = f"""Sen profesyonel bir teknoloji editorusun.
-Asagidaki habere dayanarak tamamen ozgun, SEO uyumlu ve zengin bir Turkce haber yaz.
-Baslik: {orijinal_baslik}
-Ozet: {orijinal_ozet}
-Kaynak: {kaynak_adi}
-
-Kurallar:
-- Uzunluk 750-1200 kelime arasi olmali.
-- En az 4 adet h2 basligi ve listeler icermeli.
-- Sona "Kaynak: {kaynak_adi}" ifadesini ekle.
-- SADECE JSON verisi dondur, kod bloklari ekleme:
-{{
-  "baslik": "Turkce Baslik",
-  "icerik_html": "<p>Giris...</p><h2>Detay</h2><p>Metin...</p>",
-  "meta_aciklama": "150 karakterlik ozet",
-  "kategori": "Teknoloji",
-  "etiketler": ["Etiket1", "Etiket2"],
-  "gorsel_arama_terimi": "technology device"
-}}"""
+    prompt = (
+        "Sen profesyonel bir teknoloji editörüsün.\n"
+        "Aşağıdaki habere dayanarak tamamen özgün, SEO uyumlu ve zengin bir Türkçe haber yaz.\n"
+        f"Başlık: {orijinal_baslik}\n"
+        f"Özet: {orijinal_ozet}\n"
+        f"Kaynak: {kaynak_adi}\n\n"
+        "Kurallar:\n"
+        "- Uzunluk 750-1200 kelime arası olmalı.\n"
+        "- En az 4 adet h2 başlığı ve listeler içermeli.\n"
+        f'- Sona "Kaynak: {kaynak_adi}" ifadesini ekle.\n'
+        "- SADECE geçerli bir JSON verisi döndür, markdown tırnakları ekleme:\n"
+        '{\n'
+        '  "baslik": "Türkçe Başlık",\n'
+        '  "icerik_html": "<p>Giriş...</p><h2>Detay</h2><p>Metin...</p>",\n'
+        '  "meta_aciklama": "150 karakterlik özet",\n'
+        '  "kategori": "Teknoloji",\n'
+        '  "etiketler": ["Etiket1", "Etiket2"],\n'
+        '  "gorsel_arama_terimi": "technology device"\n'
+        '}'
+    )
 
     client = genai.Client(api_key=GEMINI_API_KEY)
-    modeller = GEMINI_MODEL_FALLBACKS if GEMINI_MODEL_FALLBACKS else [GEMINI_MODEL]
 
-    for model_adi in modeller:
-        for deneme in range(3):
-            try:
-                interaction = client.interactions.create(
-                    model=model_adi,
-                    input=prompt,
-                )
-                metin = (interaction.output_text or "").strip()
-                metin = metin.replace("```json", "").replace("```", "").strip()
-                veri = json.loads(metin)
+    for deneme in range(3):
+        try:
+            response = client.models.generate_content(
+                model=GEMINI_MODEL,
+                contents=prompt,
+                config=types.GenerateContentConfig(
+                    temperature=0.6,
+                    response_mime_type="application/json",
+                ),
+            )
 
-                if not veri.get("baslik") or not veri.get("icerik_html"):
-                    print("Gemini yaniti eksik alan icerdi, atlaniyor.")
-                    return None, False
+            metin = (response.text or "").strip()
+            metin = metin.removeprefix("```json").removeprefix("```").removesuffix("```").strip()
+            veri = json.loads(metin)
 
-                etiketler = list(dict.fromkeys(veri.get("etiketler", [])))
-                if kaynak_adi not in etiketler:
-                    etiketler.append(kaynak_adi)
-                havuz = GENEL_ETIKET_HAVUZU.copy()
-                random.shuffle(havuz)
-                for e in havuz:
-                    if len(etiketler) >= 9:
-                        break
-                    if e not in etiketler:
-                        etiketler.append(e)
-                veri["etiketler"] = etiketler[:14]
-
-                if model_adi != modeller[0]:
-                    print(f"Not: '{modeller[0]}' calismadi, '{model_adi}' ile uretildi.")
-                return veri, False
-
-            except json.JSONDecodeError as e:
-                print(f"Gemini yaniti JSON olarak parse edilemedi: {e}")
+            if not veri.get("baslik") or not veri.get("icerik_html"):
+                print("Gemini yaniti eksik alan icerdi, atlaniyor.")
                 return None, False
 
-            except Exception as e:
-                hata_mesaji = str(e)
-                if "429" in hata_mesaji or "RESOURCE_EXHAUSTED" in hata_mesaji:
-                    if deneme < 2:
-                        bekleme_suresi = 45 * (deneme + 1)
-                        print(f"Gemini dakikalik kota (429). {bekleme_suresi} sn beklenip tekrar denenecek...")
-                        time.sleep(bekleme_suresi)
-                        continue
-                    else:
-                        print("Gemini kota siniri (429) asilamadi.")
-                        return None, True
-                if "404" in hata_mesaji or "NOT_FOUND" in hata_mesaji:
-                    print(f"Model '{model_adi}' kullanilamiyor, siradakine geciliyor.")
+            etiketler = list(dict.fromkeys(veri.get("etiketler", [])))
+            if kaynak_adi not in etiketler:
+                etiketler.append(kaynak_adi)
+            havuz = GENEL_ETIKET_HAVUZU.copy()
+            random.shuffle(havuz)
+            for e in havuz:
+                if len(etiketler) >= 9:
                     break
-                if "503" in hata_mesaji and deneme == 0:
-                    print("Gemini 503 mesgul, 5 sn bekleniyor...")
-                    time.sleep(5)
-                    continue
-                print(f"Gemini hatasi: {e}")
-                return None, False
+                if e not in etiketler:
+                    etiketler.append(e)
+            veri["etiketler"] = etiketler[:14]
 
-    print("Denenen modellerden sonuc alinamadi.")
+            return veri, False
+
+        except json.JSONDecodeError as e:
+            print(f"Gemini yaniti JSON olarak parse edilemedi: {e}")
+            return None, False
+
+        except Exception as e:
+            hata_mesaji = str(e)
+            if "429" in hata_mesaji or "RESOURCE_EXHAUSTED" in hata_mesaji:
+                if deneme < 2:
+                    bekleme_suresi = 45 * (deneme + 1)
+                    print(f"Gemini dakikalik kota (429). {bekleme_suresi} sn beklenip tekrar denenecek...")
+                    time.sleep(bekleme_suresi)
+                    continue
+                else:
+                    print("Gemini kota siniri (429) asilamadi.")
+                    return None, True
+            if "503" in hata_mesaji and deneme == 0:
+                print("Gemini 503 mesgul, 5 sn bekleniyor...")
+                time.sleep(5)
+                continue
+            print(f"Gemini hatasi: {e}")
+            return None, False
+
+    print("Denenen modelden sonuc alinamadi.")
     return None, False
 
 
 def blogger_paylas(access_token, blog_id, baslik, icerik, etiketler, is_draft=True):
-    post_url = "https://www.googleapis.com/blogger/v3/blogs/" + str(blog_id) + "/posts"
+    post_url = "[https://www.googleapis.com/blogger/v3/blogs/](https://www.googleapis.com/blogger/v3/blogs/)" + str(blog_id) + "/posts"
     params = {"isDraft": "true" if is_draft else "false"}
     headers = {
         "Authorization": f"Bearer {access_token}",
