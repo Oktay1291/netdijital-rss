@@ -17,7 +17,7 @@ REFRESH_TOKEN = os.getenv("BLOGGER_REFRESH_TOKEN")
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
 PEXELS_API_KEY = os.getenv("PEXELS_API_KEY")
 HISTORY_FILE = "posted_history.json"
-MAX_GECMIS_LINK = 2000
+MAX_GECMIS_LINK = 2000f
 
 MIN_PAYLASIM_ARALIGI_DAKIKA = 80
 TASLAK_OLARAK_KAYDET = False
@@ -223,7 +223,8 @@ def llm_ile_makale_uret(orijinal_baslik, orijinal_ozet, kaynak_adi):
 
 
 def blogger_paylas(access_token, blog_id, baslik, icerik, etiketler, is_draft=True):
-    post_url = "[https://www.googleapis.com/blogger/v3/blogs/](https://www.googleapis.com/blogger/v3/blogs/)" + str(blog_id) + "/posts"
+    base_api = "".join(["https://", "www.googleapis.com", "/blogger/v3/blogs/"])
+    post_url = f"{base_api}{blog_id}/posts"
     params = {"isDraft": "true" if is_draft else "false"}
     headers = {
         "Authorization": f"Bearer {access_token}",
