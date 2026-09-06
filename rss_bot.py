@@ -163,17 +163,19 @@ def llm_ile_makale_uret(orijinal_baslik, orijinal_ozet, kaynak_adi):
 
     client = genai.Client(api_key=GEMINI_API_KEY)
 
-    for deneme in range(3):
-        try:
-            response = client.models.generate_content(
-                model=GEMINI_MODEL,
-                contents=prompt,
-                config=types.GenerateContentConfig(
-                    temperature=0.6,
-                    response_mime_type="application/json",
-                ),
-            )
-
+for deneme in range(3):
+    try:
+        import time
+        time.sleep(5)  # Kotaya takılmamak için istekler arasına bekleme
+        
+        response = client.models.generate_content(
+            model=GEMINI_MODEL,
+            contents=prompt,
+            config=types.GenerateContentConfig(
+                temperature=0.6,
+                response_mime_type="application/json",
+            ),
+        )
             metin = (response.text or "").strip()
             metin = metin.removeprefix("```json").removeprefix("```").removesuffix("```").strip()
             veri = json.loads(metin)
