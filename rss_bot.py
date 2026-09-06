@@ -221,20 +221,25 @@ def llm_ile_makale_uret(orijinal_baslik, orijinal_ozet, kaynak_adi):
     print("Denenen modelden sonuc alinamadi.")
     return None, False
 
-
-def blogger_paylas(access_token, blog_id, baslik, icerik, etiketler, is_draft=True):
-    base_api = "".join(["https://", "www.googleapis.com", "/blogger/v3/blogs/"])
-    post_url = f"{base_api}{blog_id}/posts"
-    params = {"isDraft": "true" if is_draft else "false"}
+def blogger_paylas(access_token, blog_id, baslik, icerik, etiketler, is_draft=False):
+    clean_blog_id = str(blog_id).strip()
+    post_url = f"https://www.googleapis.com/blogger/v3/blogs/{clean_blog_id}/posts"
+    
     headers = {
         "Authorization": f"Bearer {access_token}",
-        "Content-Type": "application/json",
+        "Content-Type": "application/json"
     }
+    
+    params = {
+        "isDraft": bool(is_draft)
+    }
+    
     post_data = {
         "title": baslik,
         "content": icerik,
-        "labels": etiketler,
+        "labels": etiketler if etiketler else []
     }
+    
     return requests.post(post_url, headers=headers, params=params, json=post_data, timeout=30)
 
 
