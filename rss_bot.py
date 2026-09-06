@@ -122,7 +122,7 @@ def blogger_servisi():
     creds = Credentials(
         token=None,
         refresh_token=BLOGGER_REFRESH_TOKEN,
-        token_uri="[https://oauth2.googleapis.com/token](https://oauth2.googleapis.com/token)",
+        token_uri="https://oauth2.googleapis.com/token",
         client_id=BLOGGER_CLIENT_ID,
         client_secret=BLOGGER_CLIENT_SECRET,
         scopes=["[https://www.googleapis.com/auth/blogger](https://www.googleapis.com/auth/blogger)"]
