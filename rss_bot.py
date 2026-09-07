@@ -8,8 +8,7 @@ import traceback
 import urllib.request
 import requests
 import feedparser
-from google import genai
-from google.genai import types
+import google.generativeai as genai
 from bs4 import BeautifulSoup
 
 CLIENT_ID = os.getenv("BLOGGER_CLIENT_ID")
@@ -21,6 +20,29 @@ HISTORY_FILE = "posted_history.json"
 MAX_GECMIS_LINK = 2000
 
 TASLAK_OLARAK_KAYDET = False
+
+# Gemini Yapılandırması ve Model Başlatma
+genai.configure(api_key=GEMINI_API_KEY)
+model = genai.GenerativeModel('gemini-1.5-flash-latest')
+
+RSS_SOURCES = [
+# Gemini Yapılandırması ve Model Başlatma
+genai.configure(api_key=GEMINI_API_KEY)
+model = genai.GenerativeModel('gemini-1.5-flash-latest')
+
+RSS_SOURCES = [
+
+# Gemini Yapılandırması ve Model Başlatma
+genai.configure(api_key=GEMINI_API_KEY)
+model = genai.GenerativeModel('gemini-1.5-flash-latest')
+
+RSS_SOURCES = [
+
+# Gemini Yapılandırması ve Model Başlatma
+genai.configure(api_key=GEMINI_API_KEY)
+model = genai.GenerativeModel('gemini-1.5-flash-latest')
+
+RSS_SOURCES = [
 
 # Model adi resmi guncel flash surumune sabitlendi
 model = genai.GenerativeModel('gemini-1.5-flash-latest')
