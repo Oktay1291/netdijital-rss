@@ -254,8 +254,9 @@ def main():
         print("Token alinamadi, islem iptal.")
         return
 
-    blog_id = get_blog_id(access_token)
+    blog_id = os.getenv("BLOGGER_BLOG_ID")
     if not blog_id:
+        print("BLOGGER_BLOG_ID eksik!")
         return
 
     toplam_kaynak = len(RSS_SOURCES)
