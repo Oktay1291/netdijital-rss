@@ -25,25 +25,6 @@ TASLAK_OLARAK_KAYDET = False
 genai.configure(api_key=GEMINI_API_KEY)
 model = genai.GenerativeModel('gemini-1.5-flash-latest')
 
-RSS_SOURCES = [
-# Gemini Yapılandırması ve Model Başlatma
-genai.configure(api_key=GEMINI_API_KEY)
-model = genai.GenerativeModel('gemini-1.5-flash-latest')
-
-RSS_SOURCES = [
-
-# Gemini Yapılandırması ve Model Başlatma
-genai.configure(api_key=GEMINI_API_KEY)
-model = genai.GenerativeModel('gemini-1.5-flash-latest')
-
-RSS_SOURCES = [
-
-# Gemini Yapılandırması ve Model Başlatma
-genai.configure(api_key=GEMINI_API_KEY)
-model = genai.GenerativeModel('gemini-1.5-flash-latest')
-
-RSS_SOURCES = [
-
 # Model adi resmi guncel flash surumune sabitlendi
 model = genai.GenerativeModel('gemini-1.5-flash-latest')
 
