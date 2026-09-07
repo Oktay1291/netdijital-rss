@@ -22,11 +22,11 @@ MAX_GECMIS_LINK = 2000
 TASLAK_OLARAK_KAYDET = False
 
 # Gemini Yapılandırması ve Model Başlatma
-genai.configure(api_key=GEMINI_API_KEY)
-model = genai.GenerativeModel('gemini-1.5-flash-latest')
-
-# Model adi resmi guncel flash surumune sabitlendi
-model = genai.GenerativeModel('gemini-1.5-flash-latest')
+if GEMINI_API_KEY:
+    genai.configure(api_key=GEMINI_API_KEY)
+    model = genai.GenerativeModel("gemini-1.5-flash-latest")
+else:
+    model = None
 
 RSS_SOURCES = [
     {"url": "https://www.engadget.com/rss.xml", "kaynak": "Engadget"},
@@ -140,8 +140,8 @@ def pexels_gorsel_bul(anahtar_kelime):
 
 
 def llm_ile_makale_uret(orijinal_baslik, orijinal_ozet, kaynak_adi):
-    if not GEMINI_API_KEY:
-        print("GEMINI_API_KEY eksik.")
+    if not GEMINI_API_KEY or not model:
+        print("GEMINI_API_KEY veya model hazir degil.")
         return None, False
 
     prompt = (
@@ -154,31 +154,27 @@ def llm_ile_makale_uret(orijinal_baslik, orijinal_ozet, kaynak_adi):
         "- Uzunluk 750-1200 kelime arası olmalı.\n"
         "- En az 4 adet h2 başlığı ve listeler içermeli.\n"
         f'- Sona "Kaynak: {kaynak_adi}" ifadesini ekle.\n'
-        "- SADECE geçerli bir JSON verisi döndür, markdown tırnakları ekleme:\n"
-        '{\n'
+        "- SADECE geçerli bir JSON formatı döndür, başka hiçbir metin veya markdown tırnak işareti ekleme:\n"
+        "{\n"
         '  "baslik": "Türkçe Başlık",\n'
         '  "icerik_html": "<p>Giriş...</p><h2>Detay</h2><p>Metin...</p>",\n'
         '  "meta_aciklama": "150 karakterlik özet",\n'
         '  "kategori": "Teknoloji",\n'
         '  "etiketler": ["Etiket1", "Etiket2"],\n'
         '  "gorsel_arama_terimi": "technology device"\n'
-        '}'
+        "}"
     )
-
-    client = genai.Client(api_key=GEMINI_API_KEY)
 
     for deneme in range(3):
         try:
-            time.sleep(5)  # Kotaya takılmamak için bekleme
+            time.sleep(5)  # Kotayı koruma amacıyla kısa bekleme
 
-            response = client.models.generate_content(
-                model=GEMINI_MODEL,
-                contents=prompt,
-                config=types.GenerateContentConfig(
-                    temperature=0.6,
-                    response_mime_type="application/json",
-                ),
+            # JSON garantili üretim çağrısı
+            response = model.generate_content(
+                prompt,
+                generation_config={"response_mime_type": "application/json", "temperature": 0.6}
             )
+
             metin = (response.text or "").strip()
             metin = metin.removeprefix("```json").removeprefix("```").removesuffix("```").strip()
             veri = json.loads(metin)
