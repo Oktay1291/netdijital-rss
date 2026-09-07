@@ -23,7 +23,7 @@ MAX_GECMIS_LINK = 2000
 TASLAK_OLARAK_KAYDET = False
 
 # Model adi resmi guncel flash surumune sabitlendi
-GEMINI_MODEL = "gemini-1.5-flash"
+model = genai.GenerativeModel('gemini-1.5-flash-latest')
 
 RSS_SOURCES = [
     {"url": "https://www.engadget.com/rss.xml", "kaynak": "Engadget"},
