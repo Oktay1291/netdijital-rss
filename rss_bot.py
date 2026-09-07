@@ -225,8 +225,7 @@ def llm_ile_makale_uret(orijinal_baslik, orijinal_ozet, kaynak_adi):
 
 def blogger_paylas(access_token, blog_id, baslik, icerik, etiketler, is_draft=False):
     clean_blog_id = str(blog_id).strip()
-    post_url = f"[https://www.googleapis.com/blogger/v3/blogs/](https://www.googleapis.com/blogger/v3/blogs/){clean_blog_id}/posts/"
-
+    post_url = f"https://www.googleapis.com/blogger/v3/blogs/{clean_blog_id}/posts/"
     headers = {
         "Authorization": f"Bearer {access_token}",
         "Content-Type": "application/json"
