@@ -8,8 +8,9 @@ import traceback
 import urllib.request
 import requests
 import feedparser
-import google.generativeai as genai
 from bs4 import BeautifulSoup
+from google import genai
+from google.genai import types
 
 CLIENT_ID = os.getenv("BLOGGER_CLIENT_ID")
 CLIENT_SECRET = os.getenv("BLOGGER_CLIENT_SECRET")
@@ -21,12 +22,8 @@ MAX_GECMIS_LINK = 2000
 
 TASLAK_OLARAK_KAYDET = False
 
-# Gemini Yapılandırması ve Model Başlatma
-if GEMINI_API_KEY:
-    genai.configure(api_key=GEMINI_API_KEY)
-    model = genai.GenerativeModel("gemini-1.5-flash-latest")
-else:
-    model = None
+# Resmi Güncel Gemini İstemcisi
+client = genai.Client(api_key=GEMINI_API_KEY) if GEMINI_API_KEY else None
 
 RSS_SOURCES = [
     {"url": "https://www.engadget.com/rss.xml", "kaynak": "Engadget"},
@@ -140,8 +137,8 @@ def pexels_gorsel_bul(anahtar_kelime):
 
 
 def llm_ile_makale_uret(orijinal_baslik, orijinal_ozet, kaynak_adi):
-    if not GEMINI_API_KEY or not model:
-        print("GEMINI_API_KEY veya model hazir degil.")
+    if not client:
+        print("GEMINI_API_KEY eksik veya tanimsiz.")
         return None, False
 
     prompt = (
@@ -154,7 +151,7 @@ def llm_ile_makale_uret(orijinal_baslik, orijinal_ozet, kaynak_adi):
         "- Uzunluk 750-1200 kelime arası olmalı.\n"
         "- En az 4 adet h2 başlığı ve listeler içermeli.\n"
         f'- Sona "Kaynak: {kaynak_adi}" ifadesini ekle.\n'
-        "- SADECE geçerli bir JSON formatı döndür, başka hiçbir metin veya markdown tırnak işareti ekleme:\n"
+        "- SADECE geçerli bir JSON formatı döndür, markdown tırnakları ekleme:\n"
         "{\n"
         '  "baslik": "Türkçe Başlık",\n'
         '  "icerik_html": "<p>Giriş...</p><h2>Detay</h2><p>Metin...</p>",\n'
@@ -167,12 +164,15 @@ def llm_ile_makale_uret(orijinal_baslik, orijinal_ozet, kaynak_adi):
 
     for deneme in range(3):
         try:
-            time.sleep(5)  # Kotayı koruma amacıyla kısa bekleme
+            time.sleep(5)
 
-            # JSON garantili üretim çağrısı
-            response = model.generate_content(
-                prompt,
-                generation_config={"response_mime_type": "application/json", "temperature": 0.6}
+            response = client.models.generate_content(
+                model="gemini-2.5-flash",
+                contents=prompt,
+                config=types.GenerateContentConfig(
+                    temperature=0.6,
+                    response_mime_type="application/json"
+                )
             )
 
             metin = (response.text or "").strip()
@@ -262,7 +262,6 @@ def main():
     toplam_kaynak = len(RSS_SOURCES)
     mevcut_index = history.get("son_kaynak_index", 0) % toplam_kaynak
 
-    # Kaynakları mevcut indeksten başlayacak şekilde sıraya koyar
     sirali_kaynaklar = [
         ((mevcut_index + i) % toplam_kaynak, RSS_SOURCES[(mevcut_index + i) % toplam_kaynak])
         for i in range(toplam_kaynak)
@@ -326,7 +325,6 @@ def main():
                     print(f"Basarili ({durum}) [{kaynak_adi}]: {makale.get('baslik', orijinal_baslik)}")
                     history["yayinlanan_linkler"].append(link)
                     history["son_paylasim_zamani"] = simdi
-                    # Bir sonraki calismada siradaki kaynağa geç
                     history["son_kaynak_index"] = (idx + 1) % toplam_kaynak
                     save_history(history)
                     print("Saatlik 1 haber kotasi tamamlandi. Bot basariyla kapaniyor.")
