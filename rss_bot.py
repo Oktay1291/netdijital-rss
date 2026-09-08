@@ -132,6 +132,7 @@ def llm_ile_makale_uret(orijinal_baslik, orijinal_ozet, kaynak_adi):
         "- Uzunluk 750-1200 kelime arası olmalı.\n"
         "- En az 4 adet h2 başlığı ve listeler içermeli.\n"
         f'- Sona "Kaynak: {kaynak_adi}" ifadesini ekle.\n'
+        "- KRİTİK: icerik_html içindeki tüm HTML niteliklerinde (href, class, style) ve alıntılarda ÇİFT TIRNAK KULLANMA, yalnızca TEK TIRNAK (') kullan.\n"
         "- SADECE geçerli bir JSON verisi döndür, fazladan hiçbir açıklama ekleme:\n"
         "{\n"
         '  "baslik": "Türkçe Başlık",\n'
@@ -151,28 +152,11 @@ def llm_ile_makale_uret(orijinal_baslik, orijinal_ozet, kaynak_adi):
                 model="gemini-3.6-flash",
                 contents=prompt,
                 config=types.GenerateContentConfig(
-                    temperature=0.4,
+                    temperature=0.3,
+                    max_output_tokens=8192,
                     response_mime_type="application/json",
                 ),
             )
-
-            metin = (response.text or "").strip()
-            if metin.startswith("```"):
-                satirlar = metin.splitlines()
-                if satirlar[0].startswith("```"):
-                    satirlar = satirlar[1:]
-                if satirlar and satirlar[-1].startswith("```"):
-                    satirlar = satirlar[:-1]
-                metin = "\n".join(satirlar).strip()
-
-            veri = json.loads(metin, strict=False)
-
-            if not veri.get("baslik") or not veri.get("icerik_html"):
-                print("Gemini yaniti eksik alan icerdi, atlaniyor.")
-                return None, False
-
-            etiketler = list(dict.fromkeys(veri.get("etiketler", [])))
-            if kaynak_adi not in etiketler:
                 etiketler.append(kaynak_adi)
             havuz = GENEL_ETIKET_HAVUZU.copy()
             random.shuffle(havuz)
