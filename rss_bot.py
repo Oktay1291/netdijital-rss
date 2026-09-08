@@ -165,18 +165,20 @@ def llm_ile_makale_uret(orijinal_baslik, orijinal_ozet, kaynak_adi):
         try:
             time.sleep(5)
 
-            response = client.models.generate_content(
-                model="gemini-3.6-flash",
-                contents=prompt,
-                config=types.GenerateContentConfig(
-                    temperature=0.6,
-                    response_mime_type="application/json"
-                )
-            )
+            metin = (response.text or "").strip()
+            if metin.startswith("```"):
+                satirlar = metin.splitlines()
+                if satirlar[0].startswith("```"):
+                    satirlar = satirlar[1:]
+                if satirlar and satirlar[-1].startswith("```"):
+                    satirlar = satirlar[:-1]
+                metin = "\n".join(satirlar).strip()
+
+            veri = json.loads(metin, strict=False)
 
             metin = (response.text or "").strip()
             metin = metin.removeprefix("```json").removeprefix("```").removesuffix("```").strip()
-            veri = json.loads(metin)
+            veri = json.loads(metin, strict=False)
 
             if not veri.get("baslik") or not veri.get("icerik_html"):
                 print("Gemini yaniti eksik alan icerdi, atlaniyor.")
