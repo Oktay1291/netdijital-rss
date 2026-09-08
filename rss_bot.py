@@ -1,5 +1,4 @@
 import os
-import sys
 import json
 import random
 import time
@@ -16,13 +15,14 @@ CLIENT_ID = os.getenv("BLOGGER_CLIENT_ID")
 CLIENT_SECRET = os.getenv("BLOGGER_CLIENT_SECRET")
 REFRESH_TOKEN = os.getenv("BLOGGER_REFRESH_TOKEN")
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
+BLOGGER_BLOG_ID = os.getenv("BLOGGER_BLOG_ID")
 PEXELS_API_KEY = os.getenv("PEXELS_API_KEY")
 HISTORY_FILE = "posted_history.json"
 MAX_GECMIS_LINK = 2000
 
 TASLAK_OLARAK_KAYDET = False
 
-# Resmi Güncel Gemini İstemcisi
+# Resmi Google GenAI İstemcisi
 client = genai.Client(api_key=GEMINI_API_KEY) if GEMINI_API_KEY else None
 
 RSS_SOURCES = [
@@ -56,24 +56,6 @@ def get_access_token(client_id, client_secret, refresh_token):
     if r.status_code == 200:
         return r.json().get("access_token")
     print(f"Token yenileme hatasi: {r.status_code} - {r.text}")
-    return None
-
-
-def get_blog_id(access_token):
-    blogs_url = "https://www.googleapis.com/blogger/v3/users/self/blogs"
-    headers = {"Authorization": f"Bearer {access_token}"}
-    try:
-        r = requests.get(blogs_url, headers=headers, timeout=15)
-    except requests.exceptions.RequestException as e:
-        print(f"Blog ID istegi basarisiz (ag hatasi): {e}")
-        return None
-
-    if r.status_code == 200:
-        items = r.json().get("items", [])
-        if items:
-            print(f"Blog bulundu: {items[0]['name']} ({items[0]['id']})")
-            return items[0]["id"]
-    print(f"Blog ID alinamadi: {r.status_code} - {r.text}")
     return None
 
 
@@ -137,7 +119,7 @@ def pexels_gorsel_bul(anahtar_kelime):
 
 def llm_ile_makale_uret(orijinal_baslik, orijinal_ozet, kaynak_adi):
     if not client:
-        print("GEMINI_API_KEY eksik veya tanimsiz.")
+        print("GEMINI_API_KEY tanimli degil.")
         return None, False
 
     prompt = (
@@ -150,7 +132,7 @@ def llm_ile_makale_uret(orijinal_baslik, orijinal_ozet, kaynak_adi):
         "- Uzunluk 750-1200 kelime arası olmalı.\n"
         "- En az 4 adet h2 başlığı ve listeler içermeli.\n"
         f'- Sona "Kaynak: {kaynak_adi}" ifadesini ekle.\n'
-        "- SADECE geçerli bir JSON formatı döndür, markdown tırnakları ekleme:\n"
+        "- SADECE geçerli bir JSON verisi döndür, fazladan hiçbir açıklama ekleme:\n"
         "{\n"
         '  "baslik": "Türkçe Başlık",\n'
         '  "icerik_html": "<p>Giriş...</p><h2>Detay</h2><p>Metin...</p>",\n'
@@ -165,6 +147,15 @@ def llm_ile_makale_uret(orijinal_baslik, orijinal_ozet, kaynak_adi):
         try:
             time.sleep(5)
 
+            response = client.models.generate_content(
+                model="gemini-3.6-flash",
+                contents=prompt,
+                config=types.GenerateContentConfig(
+                    temperature=0.4,
+                    response_mime_type="application/json",
+                ),
+            )
+
             metin = (response.text or "").strip()
             if metin.startswith("```"):
                 satirlar = metin.splitlines()
@@ -174,10 +165,6 @@ def llm_ile_makale_uret(orijinal_baslik, orijinal_ozet, kaynak_adi):
                     satirlar = satirlar[:-1]
                 metin = "\n".join(satirlar).strip()
 
-            veri = json.loads(metin, strict=False)
-
-            metin = (response.text or "").strip()
-            metin = metin.removeprefix("```json").removeprefix("```").removesuffix("```").strip()
             veri = json.loads(metin, strict=False)
 
             if not veri.get("baslik") or not veri.get("icerik_html"):
@@ -227,19 +214,20 @@ def llm_ile_makale_uret(orijinal_baslik, orijinal_ozet, kaynak_adi):
 def blogger_paylas(access_token, blog_id, baslik, icerik, etiketler, is_draft=False):
     clean_blog_id = str(blog_id).strip()
     post_url = f"https://www.googleapis.com/blogger/v3/blogs/{clean_blog_id}/posts/"
+
     headers = {
         "Authorization": f"Bearer {access_token}",
-        "Content-Type": "application/json"
+        "Content-Type": "application/json",
     }
 
     params = {
-        "isDraft": "true" if is_draft else "false"
+        "isDraft": "true" if is_draft else "false",
     }
 
     post_data = {
         "title": baslik,
         "content": icerik,
-        "labels": etiketler if isinstance(etiketler, list) else []
+        "labels": etiketler if isinstance(etiketler, list) else [],
     }
 
     return requests.post(post_url, headers=headers, params=params, json=post_data, timeout=30)
@@ -255,10 +243,11 @@ def main():
         print("Token alinamadi, islem iptal.")
         return
 
-    blog_id = os.getenv("BLOGGER_BLOG_ID")
+    blog_id = BLOGGER_BLOG_ID
     if not blog_id:
-        print("BLOGGER_BLOG_ID eksik!")
+        print("BLOGGER_BLOG_ID secret degeri bulunamadi!")
         return
+
     print(f"Hedef Blog ID: {blog_id}")
 
     toplam_kaynak = len(RSS_SOURCES)
@@ -331,13 +320,10 @@ def main():
                     save_history(history)
                     print("Saatlik 1 haber kotasi tamamlandi. Bot basariyla kapaniyor.")
                     return
-                
                 else:
                     print(f"Blogger API Hatasi: {sonuc.status_code} - {sonuc.text}")
                     print("Blogger yetki/paylasim hatasi nedeniyle diger haberlere gecilmeden bot durduruluyor.")
                     return
-
-                time.sleep(10)
 
             except Exception as e:
                 print(f"Dongu hatasi: {e}")
