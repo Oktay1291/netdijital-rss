@@ -46,7 +46,6 @@ def get_access_token(client_id, client_secret, refresh_token):
         "client_secret": client_secret,
         "refresh_token": refresh_token,
         "grant_type": "refresh_token",
-        "scope": "https://www.googleapis.com/auth/blogger",
     }
     try:
         r = requests.post(token_url, data=payload, timeout=15)
@@ -258,6 +257,7 @@ def main():
     if not blog_id:
         print("BLOGGER_BLOG_ID eksik!")
         return
+    print(f"Hedef Blog ID: {blog_id}")
 
     toplam_kaynak = len(RSS_SOURCES)
     mevcut_index = history.get("son_kaynak_index", 0) % toplam_kaynak
