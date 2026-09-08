@@ -1,4 +1,4 @@
-name: NetDijital RSS Bot
+name: RSS Blogger Bot
 
 on:
   schedule:
@@ -15,10 +15,11 @@ concurrency:
 jobs:
   run-bot:
     runs-on: ubuntu-latest
-
     steps:
       - name: Repoyu Klonla
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - name: Python Kur
         uses: actions/setup-python@v5
@@ -37,6 +38,7 @@ jobs:
           BLOGGER_CLIENT_ID: ${{ secrets.BLOGGER_CLIENT_ID }}
           BLOGGER_CLIENT_SECRET: ${{ secrets.BLOGGER_CLIENT_SECRET }}
           BLOGGER_REFRESH_TOKEN: ${{ secrets.BLOGGER_REFRESH_TOKEN }}
+          PEXELS_API_KEY: ${{ secrets.PEXELS_API_KEY }}
         run: python rss_bot.py
 
       - name: Geçmiş Dosyasını Commit Et
@@ -44,19 +46,15 @@ jobs:
           set -e
           git config --global user.name "github-actions[bot]"
           git config --global user.email "github-actions[bot]@users.noreply.github.com"
-
           if [ ! -f posted_history.json ]; then
             echo "posted_history.json bulunamadi, commit atlaniyor."
             exit 0
           fi
-
           git add posted_history.json
-
           if git diff --cached --quiet; then
             echo "Degisiklik yok, commit atlaniyor."
             exit 0
           fi
-
           git commit -m "Auto: gecmis guncellendi [skip ci]"
           git pull --rebase origin "${GITHUB_REF_NAME}"
           git push
