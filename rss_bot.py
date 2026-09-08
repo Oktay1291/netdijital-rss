@@ -329,8 +329,11 @@ def main():
                     save_history(history)
                     print("Saatlik 1 haber kotasi tamamlandi. Bot basariyla kapaniyor.")
                     return
+                
                 else:
                     print(f"Blogger API Hatasi: {sonuc.status_code} - {sonuc.text}")
+                    print("Blogger yetki/paylasim hatasi nedeniyle diger haberlere gecilmeden bot durduruluyor.")
+                    return
 
                 time.sleep(10)
 
