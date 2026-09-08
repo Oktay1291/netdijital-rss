@@ -10,7 +10,7 @@ import feedparser
 from bs4 import BeautifulSoup
 from google import genai
 from google.genai import types
-
+ 
 CLIENT_ID = os.getenv("BLOGGER_CLIENT_ID")
 CLIENT_SECRET = os.getenv("BLOGGER_CLIENT_SECRET")
 REFRESH_TOKEN = os.getenv("BLOGGER_REFRESH_TOKEN")
@@ -19,12 +19,12 @@ BLOGGER_BLOG_ID = os.getenv("BLOGGER_BLOG_ID")
 PEXELS_API_KEY = os.getenv("PEXELS_API_KEY")
 HISTORY_FILE = "posted_history.json"
 MAX_GECMIS_LINK = 2000
-
+ 
 TASLAK_OLARAK_KAYDET = False
-
+ 
 # Resmi Google GenAI İstemcisi
 client = genai.Client(api_key=GEMINI_API_KEY) if GEMINI_API_KEY else None
-
+ 
 RSS_SOURCES = [
     {"url": "https://www.engadget.com/rss.xml", "kaynak": "Engadget"},
     {"url": "https://www.digitaltrends.com/feed/", "kaynak": "Digital Trends"},
@@ -32,13 +32,13 @@ RSS_SOURCES = [
     {"url": "https://www.androidpolice.com/feed/", "kaynak": "Android Police"},
     {"url": "https://bgr.com/feed/", "kaynak": "BGR"},
 ]
-
+ 
 GENEL_ETIKET_HAVUZU = [
     "Teknoloji Haberleri", "Güncel", "Dijital Dünya", "İnceleme",
     "Haberler", "Bilim ve Teknoloji", "Gündem",
 ]
-
-
+ 
+ 
 def get_access_token(client_id, client_secret, refresh_token):
     token_url = "https://oauth2.googleapis.com/token"
     payload = {
@@ -52,13 +52,13 @@ def get_access_token(client_id, client_secret, refresh_token):
     except requests.exceptions.RequestException as e:
         print(f"Token yenileme istegi basarisiz (ag hatasi): {e}")
         return None
-
+ 
     if r.status_code == 200:
         return r.json().get("access_token")
     print(f"Token yenileme hatasi: {r.status_code} - {r.text}")
     return None
-
-
+ 
+ 
 def load_history():
     default_data = {"yayinlanan_linkler": [], "son_kaynak_index": 0, "son_paylasim_zamani": 0}
     if os.path.exists(HISTORY_FILE):
@@ -72,14 +72,14 @@ def load_history():
         except Exception:
             pass
     return default_data
-
-
+ 
+ 
 def save_history(data):
     data["yayinlanan_linkler"] = data["yayinlanan_linkler"][-MAX_GECMIS_LINK:]
     with open(HISTORY_FILE, "w", encoding="utf-8") as f:
         json.dump(data, f, ensure_ascii=False, indent=2)
-
-
+ 
+ 
 def fetch_feed(url, kaynak_adi="Kaynak"):
     req = urllib.request.Request(
         url,
@@ -94,8 +94,8 @@ def fetch_feed(url, kaynak_adi="Kaynak"):
     except Exception as e:
         print(f"Feed alinamadi [{kaynak_adi}]: {e}")
         return feedparser.parse("")
-
-
+ 
+ 
 def pexels_gorsel_bul(anahtar_kelime):
     if not PEXELS_API_KEY or not anahtar_kelime:
         return None, None
@@ -115,13 +115,13 @@ def pexels_gorsel_bul(anahtar_kelime):
     except Exception as e:
         print(f"Pexels hatasi: {e}")
     return None, None
-
-
+ 
+ 
 def llm_ile_makale_uret(orijinal_baslik, orijinal_ozet, kaynak_adi):
     if not client:
         print("GEMINI_API_KEY tanimli degil.")
         return None, False
-
+ 
     prompt = (
         "Sen profesyonel bir teknoloji editörüsün.\n"
         "Aşağıdaki habere dayanarak tamamen özgün, SEO uyumlu ve zengin bir Türkçe haber yaz.\n"
@@ -143,11 +143,13 @@ def llm_ile_makale_uret(orijinal_baslik, orijinal_ozet, kaynak_adi):
         '  "gorsel_arama_terimi": "technology device"\n'
         "}"
     )
-aktif_prompt = prompt
+ 
+    aktif_prompt = prompt
+ 
     for deneme in range(3):
         try:
             time.sleep(5)
-
+ 
             response = client.models.generate_content(
                 model="gemini-3.6-flash",
                 contents=aktif_prompt,
@@ -157,6 +159,7 @@ aktif_prompt = prompt
                     response_mime_type="application/json",
                 ),
             )
+ 
             metin = (response.text or "").strip()
             if metin.startswith("```"):
                 satirlar = metin.splitlines()
@@ -165,14 +168,15 @@ aktif_prompt = prompt
                 if satirlar and satirlar[-1].startswith("```"):
                     satirlar = satirlar[:-1]
                 metin = "\n".join(satirlar).strip()
-
+ 
             veri = json.loads(metin, strict=False)
-
+ 
             if not veri.get("baslik") or not veri.get("icerik_html"):
                 print("Gemini yaniti eksik alan icerdi, atlaniyor.")
                 return None, False
-
+ 
             etiketler = list(dict.fromkeys(veri.get("etiketler", [])))
+            if kaynak_adi not in etiketler:
                 etiketler.append(kaynak_adi)
             havuz = GENEL_ETIKET_HAVUZU.copy()
             random.shuffle(havuz)
@@ -182,16 +186,20 @@ aktif_prompt = prompt
                 if e not in etiketler:
                     etiketler.append(e)
             veri["etiketler"] = etiketler[:14]
-
+ 
             return veri, False
-
+ 
         except json.JSONDecodeError as e:
             print(f"Gemini yaniti JSON olarak parse edilemedi (Deneme {deneme + 1}/3): {e}")
             if deneme < 2:
+                aktif_prompt = (
+                    prompt + "\n\nUYARI: Önceki yanıtında JSON formatı bozuk çıktı. "
+                    "Tırnak işaretlerine ve kaçış karakterlerine dikkat ederek SADECE geçerli JSON üret."
+                )
                 time.sleep(5)
                 continue
             return None, False
-
+ 
         except Exception as e:
             hata_mesaji = str(e)
             if "429" in hata_mesaji or "RESOURCE_EXHAUSTED" in hata_mesaji:
@@ -209,91 +217,91 @@ aktif_prompt = prompt
                 continue
             print(f"Gemini hatasi: {e}")
             return None, False
-
+ 
     print("Denenen modelden sonuc alinamadi.")
     return None, False
-
-
+ 
+ 
 def blogger_paylas(access_token, blog_id, baslik, icerik, etiketler, is_draft=False):
     clean_blog_id = str(blog_id).strip()
     post_url = f"https://www.googleapis.com/blogger/v3/blogs/{clean_blog_id}/posts/"
-
+ 
     headers = {
         "Authorization": f"Bearer {access_token}",
         "Content-Type": "application/json",
     }
-
+ 
     params = {
         "isDraft": "true" if is_draft else "false",
     }
-
+ 
     post_data = {
         "title": baslik,
         "content": icerik,
         "labels": etiketler if isinstance(etiketler, list) else [],
     }
-
+ 
     return requests.post(post_url, headers=headers, params=params, json=post_data, timeout=30)
-
-
+ 
+ 
 def main():
     history = load_history()
     simdi = time.time()
-
+ 
     print("Kimlik dogrulamasi yapiliyor...")
     access_token = get_access_token(CLIENT_ID, CLIENT_SECRET, REFRESH_TOKEN)
     if not access_token:
         print("Token alinamadi, islem iptal.")
         return
-
+ 
     blog_id = BLOGGER_BLOG_ID
     if not blog_id:
         print("BLOGGER_BLOG_ID secret degeri bulunamadi!")
         return
-
+ 
     print(f"Hedef Blog ID: {blog_id}")
-
+ 
     toplam_kaynak = len(RSS_SOURCES)
     mevcut_index = history.get("son_kaynak_index", 0) % toplam_kaynak
-
+ 
     sirali_kaynaklar = [
         ((mevcut_index + i) % toplam_kaynak, RSS_SOURCES[(mevcut_index + i) % toplam_kaynak])
         for i in range(toplam_kaynak)
     ]
-
+ 
     for idx, kaynak in sirali_kaynaklar:
         kaynak_adi = kaynak["kaynak"]
         rss_url = kaynak["url"]
         print(f"Taranan kaynak [{idx + 1}/{toplam_kaynak}]: {kaynak_adi}")
-
+ 
         feed = fetch_feed(rss_url, kaynak_adi)
-
+ 
         for entry in feed.entries[:10]:
             link = getattr(entry, "link", None)
             if not link or link in history["yayinlanan_linkler"]:
                 continue
-
+ 
             try:
                 orijinal_baslik = getattr(entry, "title", "") or "(Basliksiz)"
                 ham_ozet = getattr(entry, "summary", "")
                 orijinal_ozet = BeautifulSoup(ham_ozet, "html.parser").get_text(separator=" ", strip=True)
-
+ 
                 print(f"Gemini uretimi basladi: {orijinal_baslik}")
                 makale, kota_asildi = llm_ile_makale_uret(orijinal_baslik, orijinal_ozet, kaynak_adi)
-
+ 
                 if kota_asildi:
                     print("Kota bitti, program sonlandiriliyor.")
                     return
-
+ 
                 if not makale:
                     time.sleep(5)
                     continue
-
+ 
                 gorsel_url, fotografci = pexels_gorsel_bul(makale.get("gorsel_arama_terimi", ""))
-
+ 
                 icerik_html = makale.get("icerik_html", "")
                 baslik_guvenli = html.escape(makale.get("baslik", orijinal_baslik), quote=True)
-
+ 
                 if gorsel_url:
                     fotografci_guvenli = html.escape(fotografci or "Pexels", quote=True)
                     gorsel_etiketi = (
@@ -302,9 +310,9 @@ def main():
                         f"<p><small>Gorsel: Pexels / {fotografci_guvenli}</small></p>"
                     )
                     icerik_html = gorsel_etiketi + icerik_html
-
+ 
                 etiketler = makale.get("etiketler", [kaynak_adi])
-
+ 
                 sonuc = blogger_paylas(
                     access_token=access_token,
                     blog_id=blog_id,
@@ -313,7 +321,7 @@ def main():
                     etiketler=etiketler,
                     is_draft=TASLAK_OLARAK_KAYDET,
                 )
-
+ 
                 if sonuc.status_code in (200, 201):
                     durum = "taslak" if TASLAK_OLARAK_KAYDET else "yayin"
                     print(f"Basarili ({durum}) [{kaynak_adi}]: {makale.get('baslik', orijinal_baslik)}")
@@ -327,13 +335,14 @@ def main():
                     print(f"Blogger API Hatasi: {sonuc.status_code} - {sonuc.text}")
                     print("Blogger yetki/paylasim hatasi nedeniyle diger haberlere gecilmeden bot durduruluyor.")
                     return
-
+ 
             except Exception as e:
                 print(f"Dongu hatasi: {e}")
                 print(traceback.format_exc())
-
+ 
     print("Uygun yeni haber bulunamadi veya tum kaynaklar tarandi.")
-
-
+ 
+ 
 if __name__ == "__main__":
     main()
+ 
