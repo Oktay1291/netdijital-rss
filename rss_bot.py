@@ -143,20 +143,36 @@ def llm_ile_makale_uret(orijinal_baslik, orijinal_ozet, kaynak_adi):
         '  "gorsel_arama_terimi": "technology device"\n'
         "}"
     )
-
+aktif_prompt = prompt
     for deneme in range(3):
         try:
             time.sleep(5)
 
             response = client.models.generate_content(
                 model="gemini-3.6-flash",
-                contents=prompt,
+                contents=aktif_prompt,
                 config=types.GenerateContentConfig(
                     temperature=0.3,
                     max_output_tokens=8192,
                     response_mime_type="application/json",
                 ),
             )
+            metin = (response.text or "").strip()
+            if metin.startswith("```"):
+                satirlar = metin.splitlines()
+                if satirlar[0].startswith("```"):
+                    satirlar = satirlar[1:]
+                if satirlar and satirlar[-1].startswith("```"):
+                    satirlar = satirlar[:-1]
+                metin = "\n".join(satirlar).strip()
+
+            veri = json.loads(metin, strict=False)
+
+            if not veri.get("baslik") or not veri.get("icerik_html"):
+                print("Gemini yaniti eksik alan icerdi, atlaniyor.")
+                return None, False
+
+            etiketler = list(dict.fromkeys(veri.get("etiketler", [])))
                 etiketler.append(kaynak_adi)
             havuz = GENEL_ETIKET_HAVUZU.copy()
             random.shuffle(havuz)
@@ -170,7 +186,10 @@ def llm_ile_makale_uret(orijinal_baslik, orijinal_ozet, kaynak_adi):
             return veri, False
 
         except json.JSONDecodeError as e:
-            print(f"Gemini yaniti JSON olarak parse edilemedi: {e}")
+            print(f"Gemini yaniti JSON olarak parse edilemedi (Deneme {deneme + 1}/3): {e}")
+            if deneme < 2:
+                time.sleep(5)
+                continue
             return None, False
 
         except Exception as e:
