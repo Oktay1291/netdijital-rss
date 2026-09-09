@@ -254,12 +254,18 @@ def main():
         print("Token alinamadi, islem iptal.")
         return
  
-    blog_id = BLOGGER_BLOG_ID
-    if not blog_id:
-        print("BLOGGER_BLOG_ID secret degeri bulunamadi!")
+    # Token'in gercekten erisebildigi bloglari Google'dan sorgula
+    r_blog = requests.get(
+        "https://www.googleapis.com/blogger/v3/users/self/blogs",
+        headers={"Authorization": f"Bearer {access_token}"}
+    )
+    blogs_data = r_blog.json()
+    if "items" in blogs_data and blogs_data["items"]:
+        blog_id = blogs_data["items"][0]["id"]
+        print(f"Yetkili Blog Otomatik Bulundu: {blogs_data['items'][0]['name']} (ID: {blog_id})")
+    else:
+        print(f"HATA: Bu token ile iliskili blog bulunamadi! Donen yanit: {blogs_data}")
         return
- 
-    print(f"Hedef Blog ID: {blog_id}")
  
     toplam_kaynak = len(RSS_SOURCES)
     mevcut_index = history.get("son_kaynak_index", 0) % toplam_kaynak
