@@ -1,60 +1,66 @@
-name: RSS Blogger Bot
+name: Saatlik Teknoloji Haber Botu
 
 on:
-  schedule:
-    - cron: '0 */2 * * *'
+
   workflow_dispatch:
+
+  schedule:
+    # Türkiye saati 06:00 - 22:00
+    # Türkiye UTC+3 olduğu için:
+    # 03:00 - 19:00 UTC
+    - cron: "0 3-19 * * *"
 
 permissions:
   contents: write
 
-concurrency:
-  group: netdijital-rss-bot
-  cancel-in-progress: false
 
 jobs:
-  run-bot:
+
+  publish-news:
+
     runs-on: ubuntu-latest
+
     steps:
-      - name: Repoyu Klonla
+
+      - name: Repository Checkout
         uses: actions/checkout@v4
         with:
-          fetch-depth: 0
+          fetch-depth: 1
 
-      - name: Python Kur
+      - name: Python Kurulumu
         uses: actions/setup-python@v5
         with:
-          python-version: '3.11'
+          python-version: "3.10"
 
-      - name: Bağımlılıkları Yükle
+      - name: Bağımlılıkları Kur
         run: |
           python -m pip install --upgrade pip
-          pip install -r requirements.txt
+          pip install \
+            feedparser \
+            requests \
+            beautifulsoup4 \
+            google-genai
 
-      - name: Botu Çalıştır
+      - name: Haber Botunu Çalıştır
         env:
-          BLOGGER_BLOG_ID: ${{ secrets.BLOGGER_BLOG_ID }}
-          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
-          BLOGGER_CLIENT_ID: ${{ secrets.BLOGGER_CLIENT_ID }}
-          BLOGGER_CLIENT_SECRET: ${{ secrets.BLOGGER_CLIENT_SECRET }}
-          BLOGGER_REFRESH_TOKEN: ${{ secrets.BLOGGER_REFRESH_TOKEN }}
-          PEXELS_API_KEY: ${{ secrets.PEXELS_API_KEY }}
-        run: python rss_bot.py
 
-      - name: Geçmiş Dosyasını Commit Et
+          BLOGGER_BLOG_ID: ${{ secrets.BLOGGER_BLOG_ID }}
+
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+
+          BLOGGER_REFRESH_TOKEN: ${{ secrets.BLOGGER_REFRESH_TOKEN }}
+
+          BLOGGER_CLIENT_ID: ${{ secrets.BLOGGER_CLIENT_ID }}
+
+          BLOGGER_CLIENT_SECRET: ${{ secrets.BLOGGER_CLIENT_SECRET }}
+
+          PEXELS_API_KEY: ${{ secrets.PEXELS_API_KEY }}
+
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+          GITHUB_REPOSITORY: ${{ github.repository }}
+
+          GITHUB_REF_NAME: ${{ github.ref_name }}
+
         run: |
-          set -e
-          git config --global user.name "github-actions[bot]"
-          git config --global user.email "github-actions[bot]@users.noreply.github.com"
-          if [ ! -f posted_history.json ]; then
-            echo "posted_history.json bulunamadi, commit atlaniyor."
-            exit 0
-          fi
-          git add posted_history.json
-          if git diff --cached --quiet; then
-            echo "Degisiklik yok, commit atlaniyor."
-            exit 0
-          fi
-          git commit -m "Auto: gecmis guncellendi [skip ci]"
-          git pull --rebase origin "${GITHUB_REF_NAME}"
-          git push
+          python rss_bot.py
