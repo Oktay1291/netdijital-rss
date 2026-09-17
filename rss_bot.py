@@ -54,50 +54,7 @@ client = genai.Client(api_key=GEMINI_API_KEY) if GEMINI_API_KEY else None
 
 RSS_SOURCES = [
 
-    {
-        "url": "https://www.engadget.com/rss.xml",
-        "kaynak": "Engadget"
-    },
-
-    {
-        "url": "https://www.digitaltrends.com/feed/",
-        "kaynak": "Digital Trends"
-    },
-
-    {
-        "url": "https://electrek.co/feed/",
-        "kaynak": "Electrek"
-    },
-
-    {
-        "url": "https://www.androidpolice.com/feed/",
-        "kaynak": "Android Police"
-    },
-
-    {
-        "url": "https://bgr.com/feed/",
-        "kaynak": "BGR"
-    },
-
-    {
-        "url": "https://techcrunch.com/feed/",
-        "kaynak": "TechCrunch"
-    },
-
-    {
-        "url": "https://www.theverge.com/rss/index.xml",
-        "kaynak": "The Verge"
-    },
-
-    {
-        "url": "https://www.wired.com/feed/rss",
-        "kaynak": "WIRED"
-    },
-
-    {
-        "url": "https://mashable.com/feed.rss",
-        "kaynak": "Mashable"
-    }
+    
 ]
 
 
