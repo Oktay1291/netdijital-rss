@@ -599,8 +599,8 @@ def pexels_gorsel_bul(anahtar_kelime):
 # ============================================================
 
 ANA_KATEGORILER = [
-    "Yapay Zeka", "Mobil", "Bilgisayar", "Oyun",
-    "Otomobil", "Uzay Teknolojileri", "Sinema", "İnceleme"
+    "Yapay Zekâ", "Mobil", "Bilgisayar", "Oyun",
+    "Otomotiv", "Uzay", "Dizi & Sinema", "Rehberler"
 ]
 
 # NetDijital kategori fallback kapaklari repo icinde sabit tutulur.
@@ -614,14 +614,14 @@ FALLBACK_BASE_URL = (
 )
 
 KATEGORI_FALLBACK = {
-    "Yapay Zeka": f"{FALLBACK_BASE_URL}/netdijital-fallback-yapay-zeka-1200x675.jpg",
+    "Yapay Zekâ": f"{FALLBACK_BASE_URL}/netdijital-fallback-yapay-zeka-1200x675.jpg",
     "Mobil": f"{FALLBACK_BASE_URL}/netdijital-fallback-mobil-1200x675.jpg",
     "Bilgisayar": f"{FALLBACK_BASE_URL}/netdijital-fallback-bilgisayar-1200x675.jpg",
     "Oyun": f"{FALLBACK_BASE_URL}/netdijital-fallback-oyun-1200x675.jpg",
-    "Otomobil": f"{FALLBACK_BASE_URL}/netdijital-fallback-otomotiv-1200x675.jpg",
-    "Uzay Teknolojileri": f"{FALLBACK_BASE_URL}/netdijital-fallback-uzay-1200x675.jpg",
-    "Sinema": f"{FALLBACK_BASE_URL}/netdijital-fallback-dizi-sinema-1200x675.jpg",
-    "İnceleme": f"{FALLBACK_BASE_URL}/netdijital-fallback-rehberler-1200x675.jpg",
+    "Otomotiv": f"{FALLBACK_BASE_URL}/netdijital-fallback-otomotiv-1200x675.jpg",
+    "Uzay": f"{FALLBACK_BASE_URL}/netdijital-fallback-uzay-1200x675.jpg",
+    "Dizi & Sinema": f"{FALLBACK_BASE_URL}/netdijital-fallback-dizi-sinema-1200x675.jpg",
+    "Rehberler": f"{FALLBACK_BASE_URL}/netdijital-fallback-rehberler-1200x675.jpg",
 }
 
 MIN_GORSEL_GENISLIK = 900
@@ -632,19 +632,19 @@ MAX_ORAN = 2.25
 
 def kategori_normalize(kategori):
     if not kategori:
-        return "Yapay Zeka"
+        return "Yapay Zekâ"
     k = str(kategori).strip().lower()
     esleme = {
-        "yapay zeka": "Yapay Zeka", "ai": "Yapay Zeka",
+        "yapay zeka": "Yapay Zekâ", "yapay zekâ": "Yapay Zekâ", "ai": "Yapay Zekâ",
         "mobil": "Mobil", "telefon": "Mobil",
         "bilgisayar": "Bilgisayar", "donanım": "Bilgisayar", "donanim": "Bilgisayar",
         "oyun": "Oyun",
-        "otomotiv": "Otomobil", "otomobil": "Otomobil",
-        "uzay": "Uzay Teknolojileri", "uzay teknolojileri": "Uzay Teknolojileri",
-        "dizi & sinema": "Sinema", "sinema": "Sinema", "dizi": "Sinema",
-        "rehberler": "İnceleme", "rehber": "İnceleme", "inceleme": "İnceleme",
+        "otomotiv": "Otomotiv", "otomobil": "Otomotiv",
+        "uzay": "Uzay", "uzay teknolojileri": "Uzay",
+        "dizi & sinema": "Dizi & Sinema", "sinema": "Dizi & Sinema", "dizi": "Dizi & Sinema",
+        "rehberler": "Rehberler", "rehber": "Rehberler", "inceleme": "Rehberler",
     }
-    return esleme.get(k, "Yapay Zeka")
+    return esleme.get(k, "Yapay Zekâ")
 
 
 def _gorsel_indir(url):
@@ -874,7 +874,7 @@ KURALLAR:
 6. "Bu yazida", "gelin bakalim", "heyecan verici" gibi kalip dolgu ifadelerinden kacın.
 7. Spekulasyon, kullanici tepkisi veya sektor etkisi icin veri verilmemisse bunu olgu gibi uydurma.
 8. Ana kategori TAM OLARAK su sekiz degerden biri olmali:
-   Yapay Zeka, Mobil, Bilgisayar, Oyun, Otomobil, Uzay Teknolojileri, Sinema, İnceleme
+   Yapay Zekâ, Mobil, Bilgisayar, Oyun, Otomotiv, Uzay, Dizi & Sinema, Rehberler
 9. Etiketler ana kategori disinda 2-5 adet olsun. Marka, urun, platform veya spesifik teknoloji adlarini kullan.
 10. "Teknoloji", "Teknoloji Haberleri", "Guncel Teknoloji", "Gundem", kaynak site adi gibi genel etiketler uretme.
 11. Gorsel arama terimi 3-7 kelimelik, somut ve Ingilizce olsun.
@@ -886,45 +886,67 @@ JSON:
   "baslik": "...",
   "icerik_html": "<p>...</p><h2>...</h2><p>...</p>",
   "meta_aciklama": "...",
-  "kategori": "Yapay Zeka",
+  "kategori": "Yapay Zekâ",
   "etiketler": ["Gemini", "Google"],
   "gorsel_arama_terimi": "Google Gemini AI interface"
 }}
 """
 
-    for deneme in range(3):
-        try:
-            response = client.models.generate_content(
-                model="gemini-3.6-flash",
-                contents=prompt,
-                config=types.GenerateContentConfig(
-                    temperature=0.30,
-                    max_output_tokens=8192,
-                    response_mime_type="application/json",
-                ),
-            )
-            metin = (response.text or "").strip()
-            if metin.startswith("```"):
-                satirlar = metin.splitlines()[1:]
-                if satirlar and satirlar[-1].startswith("```"):
-                    satirlar = satirlar[:-1]
-                metin = "\n".join(satirlar).strip()
-            data = json.loads(metin)
-            for alan in ("baslik", "icerik_html", "kategori", "etiketler", "gorsel_arama_terimi"):
-                if alan not in data:
-                    raise ValueError(f"Eksik JSON alani: {alan}")
-            data["kategori"] = kategori_normalize(data.get("kategori"))
-            temiz = []
-            yasak = {"teknoloji", "teknoloji haberleri", "güncel teknoloji", "guncel teknoloji", "gündem", "gundem", "dijital dünya", "dijital dunya"}
-            for e in data.get("etiketler", []):
-                e = str(e).strip()
-                if e and e.lower() not in yasak and e.lower() != data["kategori"].lower() and e not in temiz:
-                    temiz.append(e)
-            data["etiketler"] = temiz[:5]
-            return data, True
-        except Exception as e:
-            print(f"Gemini deneme {deneme + 1}/3 hatasi: {e}")
-            time.sleep(2 + deneme)
+    # Birincil model gecici olarak yogunsa ikinci modele gecilir.
+    # 429 / 408 / 5xx gibi gecici hatalarda exponential backoff + jitter uygulanir.
+    modeller = ["gemini-3.6-flash", "gemini-3.5-flash-lite"]
+    gecici_isaretler = ("429", "408", "500", "502", "503", "504",
+                        "RESOURCE_EXHAUSTED", "UNAVAILABLE", "DEADLINE_EXCEEDED")
+    beklemeler = (5, 10, 20)
+
+    for model in modeller:
+        print(f"Gemini modeli deneniyor: {model}")
+        for deneme, temel_bekleme in enumerate(beklemeler, start=1):
+            try:
+                response = client.models.generate_content(
+                    model=model,
+                    contents=prompt,
+                    config=types.GenerateContentConfig(
+                        max_output_tokens=8192,
+                        response_mime_type="application/json",
+                    ),
+                )
+                metin = (response.text or "").strip()
+                if metin.startswith("```"):
+                    satirlar = metin.splitlines()[1:]
+                    if satirlar and satirlar[-1].startswith("```"):
+                        satirlar = satirlar[:-1]
+                    metin = "\n".join(satirlar).strip()
+                data = json.loads(metin)
+                for alan in ("baslik", "icerik_html", "kategori", "etiketler", "gorsel_arama_terimi"):
+                    if alan not in data:
+                        raise ValueError(f"Eksik JSON alani: {alan}")
+                data["kategori"] = kategori_normalize(data.get("kategori"))
+                temiz = []
+                yasak = {"teknoloji", "teknoloji haberleri", "güncel teknoloji", "guncel teknoloji", "gündem", "gundem", "dijital dünya", "dijital dunya"}
+                for e in data.get("etiketler", []):
+                    e = str(e).strip()
+                    if e and e.lower() not in yasak and e.lower() != data["kategori"].lower() and e not in temiz:
+                        temiz.append(e)
+                data["etiketler"] = temiz[:5]
+                print(f"Gemini basarili: {model}")
+                return data, True
+            except Exception as e:
+                hata = str(e)
+                gecici = any(isaret in hata for isaret in gecici_isaretler)
+                print(f"Gemini {model} deneme {deneme}/{len(beklemeler)} hatasi: {e}")
+
+                if not gecici:
+                    print(f"Kalici/istek hatasi gorundu; {model} icin tekrar denenmeyecek.")
+                    break
+
+                if deneme < len(beklemeler):
+                    bekle = temel_bekleme + random.uniform(0.5, 2.0)
+                    print(f"Gecici hata; {bekle:.1f} saniye sonra yeniden denenecek.")
+                    time.sleep(bekle)
+                else:
+                    print(f"{model} gecici hatalar nedeniyle kullanilamadi; fallback modele geciliyor.")
+
     return None, False
 
 
