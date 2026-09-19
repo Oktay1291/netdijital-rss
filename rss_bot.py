@@ -1,4 +1,4 @@
-# NetDijital rss_bot.py v1.3.5 - Gorsel alaka kontrolu ve gelismis Pexels aramasi
+# NetDijital rss_bot.py v1.3.6 - Gorsel alaka kontrolu ve gelismis Pexels aramasi
 import os
 import json
 import random
@@ -1030,13 +1030,15 @@ def kapak_html(gorsel_url, baslik, gorsel_kaynagi=None, fotografci=None):
     )
 
 
-def kaynak_html(kaynak_adi, kaynak_url):
+def kaynak_html(kaynak_adi, kaynak_url=None):
+    # Okuyucuya yalnizca kaynak adi gosterilir.
+    # URL arka planda haber secimi/dogrulama icin kullanilabilir,
+    # fakat makale HTML'ine eklenmez ve kaynak adi tiklanabilir olmaz.
     ad = html.escape(kaynak_adi or "Orijinal kaynak")
-    u = html.escape(kaynak_url or "#", quote=True)
     return (
         '<hr style="margin:28px 0 16px;border:0;border-top:1px solid #e5e5e5">'
         '<p style="font-size:14px"><strong>Kaynak:</strong> '
-        f'<a href="{u}" rel="nofollow noopener" target="_blank">{ad}</a></p>'
+        f'{ad}</p>'
     )
 
 
@@ -1154,7 +1156,7 @@ def main():
         print(f"Gorsel kaynagi: {gorsel_kaynagi or 'yok'}")
         print(f"Kapak URL     : {gorsel_url or 'yok'}")
         print(f"Kapak hedefi  : 1200x675")
-        print(f"Kaynak        : {secilen_kaynak['kaynak']} - {kaynak_url}")
+        print(f"Kaynak        : {secilen_kaynak['kaynak']}")
         print(f"HTML uzunlugu : {len(icerik)} karakter")
         print("SONUC          : BLOGGER YAYINI ATLANDI")
         print("=" * 64)
