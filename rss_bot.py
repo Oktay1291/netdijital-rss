@@ -1,4 +1,4 @@
-# NetDijital v1.3.7 - AI Icerik Kalite Kontrolu
+# NetDijital v1.3.9 - Profesyonel CTA + Kaynaklar + Tek Kategori/Yazar
 # NetDijital rss_bot.py v1.3.6 - Gorsel alaka kontrolu ve gelismis Pexels aramasi
 import os
 import json
@@ -1169,15 +1169,36 @@ def kapak_html(gorsel_url, baslik, gorsel_kaynagi=None, fotografci=None):
     )
 
 
+def cta_html(kategori=None):
+    """Her haberin sonunda gosterilen standart NetDijital takip kutusu."""
+    kategori = kategori_normalize(kategori)
+    kategori_guvenli = html.escape(kategori)
+    return (
+        '<div class="netdijital-cta" style="margin:30px 0 26px;padding:24px 26px;'
+        'border:1px solid #dbeafe;border-radius:12px;background:#f8fbff;text-align:center">'
+        '<div style="font-size:28px;line-height:1;margin-bottom:10px">&#128240;</div>'
+        '<h3 style="margin:0 0 8px;font-size:20px;line-height:1.35">'
+        'Teknoloji dünyasındaki gelişmeleri kaçırmayın</h3>'
+        '<p style="margin:0 auto 16px;max-width:680px;color:#555;line-height:1.65">'
+        f'{kategori_guvenli} ve teknoloji dünyasından güncel gelişmeleri NetDijital’de takip edin.</p>'
+        '<a href="https://netdijital.blogspot.com/" '
+        'style="display:inline-block;padding:10px 18px;border-radius:7px;background:#1565c0;'
+        'color:#fff;text-decoration:none;font-weight:600">Daha Fazla Haber &#8594;</a>'
+        '</div>'
+    )
+
+
 def kaynak_html(kaynak_adi, kaynak_url=None):
-    # Okuyucuya yalnizca kaynak adi gosterilir.
-    # URL arka planda haber secimi/dogrulama icin kullanilabilir,
-    # fakat makale HTML'ine eklenmez ve kaynak adi tiklanabilir olmaz.
+    """Haber sonunda yalnizca kaynak adini gosterir; URL gorunmez ve tiklanamaz."""
+    # kaynak_url botun haber secimi/dogrulamasi icin tutulur; makale HTML'ine eklenmez.
     ad = html.escape(kaynak_adi or "Orijinal kaynak")
     return (
-        '<hr style="margin:28px 0 16px;border:0;border-top:1px solid #e5e5e5">'
-        '<p style="font-size:14px"><strong>Kaynak:</strong> '
-        f'{ad}</p>'
+        '<div class="netdijital-sources" style="margin:26px 0 20px;padding-top:18px;'
+        'border-top:1px solid #e5e7eb">'
+        '<h3 style="margin:0 0 10px;font-size:18px;line-height:1.4">Kaynaklar</h3>'
+        '<p style="margin:0;font-size:14px;line-height:1.7">'
+        f'<strong>Kaynak:</strong> {ad}</p>'
+        '</div>'
     )
 
 
@@ -1291,6 +1312,7 @@ def main():
     icerik = (
         kapak_html(gorsel_url, makale["baslik"], gorsel_kaynagi, fotografci)
         + makale.get("icerik_html", "")
+        + cta_html(kategori)
         + kaynak_html(secilen_kaynak["kaynak"], kaynak_url)
     )
 
