@@ -1,4 +1,4 @@
-# NetDijital rss_bot.py v1.3.4 - Gorsel filtre iyilestirmesi
+# NetDijital rss_bot.py v1.3.5 - Gorsel alaka kontrolu ve gelismis Pexels aramasi
 import os
 import json
 import random
@@ -534,65 +534,39 @@ def sayfa_gorseli_bul(url):
 # PEXELS
 # ============================================================
 
-def pexels_gorsel_bul(anahtar_kelime):
-
-    if not PEXELS_API_KEY:
-        return None, None
-
-    if not anahtar_kelime:
-        return None, None
-
+def pexels_gorsel_bul(anahtar_kelime, adet=5):
+    if not PEXELS_API_KEY or not anahtar_kelime: return []
     try:
-
-        url = (
-            "https://api.pexels.com/v1/search"
-        )
-
-        headers = {
-            "Authorization":
-                PEXELS_API_KEY
-        }
-
-        params = {
-            "query": anahtar_kelime,
-            "per_page": 1,
-            "orientation": "landscape"
-        }
-
-        response = requests.get(
-            url,
-            headers=headers,
-            params=params,
-            timeout=15
-        )
-
-        if response.status_code != 200:
-            return None, None
-
-        photos = response.json().get(
-            "photos",
-            []
-        )
-
-        if photos:
-
-            photo = photos[0]
-
-            return (
-                photo["src"]["large"],
-                photo.get(
-                    "photographer",
-                    "Pexels"
-                )
-            )
-
+        response=requests.get("https://api.pexels.com/v1/search",headers={"Authorization":PEXELS_API_KEY},params={"query":anahtar_kelime,"per_page":max(1,min(int(adet),10)),"orientation":"landscape"},timeout=15)
+        if response.status_code!=200:
+            print(f"Pexels arama hatasi: HTTP {response.status_code}"); return []
+        sonuc=[]
+        for photo in response.json().get("photos",[]) or []:
+            src=photo.get("src",{}) or {}; url=src.get("large2x") or src.get("large") or src.get("original")
+            if url: sonuc.append({"url":url,"fotografci":photo.get("photographer","Pexels"),"alt":(photo.get("alt") or "").strip()})
+        print(f"Pexels aramasi: '{anahtar_kelime}' | {len(sonuc)} aday"); return sonuc
     except Exception as e:
+        print(f"Pexels hatasi: {e}"); return []
 
-        print(
-            f"Pexels hatasi: {e}"
-        )
-
-    return None, None
+def gorsel_alaka_kontrol(im, haber_basligi, arama_terimi, kaynak):
+    if not client: return kaynak != "Pexels", "Gemini istemcisi yok"
+    try:
+        kontrol=ImageOps.exif_transpose(im).convert("RGB"); kontrol.thumbnail((768,768),Image.Resampling.LANCZOS)
+        b=io.BytesIO(); kontrol.save(b,format="JPEG",quality=82,optimize=True); jpeg=b.getvalue()
+    except Exception as e: return False,f"on isleme hatasi: {type(e).__name__}: {e}"
+    prompt=(f"Bu bir teknoloji haberi kapak gorseli alaka kontroludur.\nHaber basligi: {haber_basligi}\nGorsel arama terimi: {arama_terimi}\n\n"
+            "Gorseldeki ana nesne/konu haber basligiyla anlamli bicimde ilgili mi? Genel ve ilgisiz stok fotograflari reddet. "
+            "Ayni urunun birebir fotografi sart degil; fakat konu/urun sinifi acikca uyumlu olmali. Sadece JSON dondur: "
+            '{"uygun": true, "guven": 0.0, "neden": "kisa neden"}')
+    for deneme in range(1,3):
+        try:
+            r=client.models.generate_content(model="gemini-3.5-flash-lite",contents=[prompt,types.Part.from_bytes(data=jpeg,mime_type="image/jpeg")],config=types.GenerateContentConfig(response_mime_type="application/json"))
+            veri=json.loads((r.text or "").strip()); uygun=bool(veri.get("uygun")); guven=float(veri.get("guven",0) or 0); neden=str(veri.get("neden",""))[:180]; karar=uygun and guven>=0.60
+            print(f"Gorsel alaka ({kaynak}): {'UYGUN' if karar else 'ILGISIZ'} | guven={guven:.2f} | {neden}"); return karar,neden
+        except Exception as e:
+            print(f"Gorsel alaka kontrolu deneme {deneme}/2 hatasi ({kaynak}): {type(e).__name__}: {e}")
+            if deneme<2: time.sleep(3*deneme)
+    return (False,"alaka kontrolu tamamlanamadi; Pexels adayi atlandi") if kaynak=="Pexels" else (True,"alaka kontrolu tamamlanamadi; haber kaynagi oldugu icin korundu")
 
 
 # ============================================================
@@ -875,9 +849,8 @@ def en_iyi_gorseli_sec(entry, haber_url, arama_terimi, kategori, baslik="haber")
     adaylar.extend((u, "RSS", None) for u in rss_gorsel_adaylari(entry))
     adaylar.extend((u, "Kaynak sayfa", None) for u in sayfa_gorsel_adaylari(haber_url))
 
-    p_url, fotografci = pexels_gorsel_bul(arama_terimi)
-    if p_url:
-        adaylar.append((p_url, "Pexels", fotografci))
+    for p in pexels_gorsel_bul(arama_terimi, adet=5):
+        adaylar.append((p["url"], "Pexels", p.get("fotografci")))
 
     gorulen = set()
     for u, kaynak, fotografci in adaylar:
@@ -886,6 +859,10 @@ def en_iyi_gorseli_sec(entry, haber_url, arama_terimi, kategori, baslik="haber")
         gorulen.add(u)
         uygun, im, ham = gorsel_tani_kontrol(u, kaynak)
         if not uygun:
+            continue
+        alakali, alaka_nedeni = gorsel_alaka_kontrol(im, baslik, arama_terimi, kaynak)
+        if not alakali:
+            print(f"Gorsel RED ({kaynak}) - neden: haberle alaka yetersiz: {alaka_nedeni}")
             continue
 
         try:
@@ -948,7 +925,7 @@ KURALLAR:
    Yapay Zekâ, Mobil, Bilgisayar, Oyun, Otomotiv, Uzay, Dizi & Sinema, Rehberler
 9. Etiketler ana kategori disinda 2-5 adet olsun. Marka, urun, platform veya spesifik teknoloji adlarini kullan.
 10. "Teknoloji", "Teknoloji Haberleri", "Guncel Teknoloji", "Gundem", kaynak site adi gibi genel etiketler uretme.
-11. Gorsel arama terimi 3-7 kelimelik, somut ve Ingilizce olsun.
+11. Gorsel arama terimi 3-7 kelimelik, somut ve Ingilizce olsun. Urun/marka/model haberinde marka + model + nesne turunu mutlaka icersin. technology, AI, innovation gibi tek basina genel stok terimleri kullanma.
 12. Meta aciklamasi yaklasik 140-160 karakter olsun.
 13. Sadece gecerli JSON dondur.
 
