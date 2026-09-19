@@ -7,6 +7,7 @@ import traceback
 import base64
 import re
 from datetime import datetime, timezone
+from urllib.parse import urljoin
 
 import requests
 import feedparser
@@ -583,147 +584,403 @@ def pexels_gorsel_bul(anahtar_kelime):
 
 
 # ============================================================
-# GEMINI HABER ÜRETİMİ
+# NETDIJITAL KATEGORI / GORSEL SISTEMI v1.0
 # ============================================================
 
-def llm_ile_makale_uret(
-    orijinal_baslik,
-    orijinal_ozet
-):
+ANA_KATEGORILER = [
+    "Yapay Zeka", "Mobil", "Bilgisayar", "Oyun",
+    "Otomobil", "Uzay Teknolojileri", "Sinema", "İnceleme"
+]
 
+# Kategori fallback kapaklarini daha sonra GitHub/Blogger'a yukleyip
+# bu ortam degiskenlerine URL olarak tanimlayabilirsin.
+KATEGORI_FALLBACK = {
+    "Yapay Zeka": os.getenv("FALLBACK_YAPAY_ZEKA"),
+    "Mobil": os.getenv("FALLBACK_MOBIL"),
+    "Bilgisayar": os.getenv("FALLBACK_BILGISAYAR"),
+    "Oyun": os.getenv("FALLBACK_OYUN"),
+    "Otomobil": os.getenv("FALLBACK_OTOMOTIV"),
+    "Uzay Teknolojileri": os.getenv("FALLBACK_UZAY"),
+    "Sinema": os.getenv("FALLBACK_SINEMA"),
+    "İnceleme": os.getenv("FALLBACK_REHBERLER"),
+}
+
+MIN_GORSEL_GENISLIK = 900
+MIN_GORSEL_YUKSEKLIK = 500
+MIN_ORAN = 1.35
+MAX_ORAN = 2.25
+
+
+def kategori_normalize(kategori):
+    if not kategori:
+        return "Yapay Zeka"
+    k = str(kategori).strip().lower()
+    esleme = {
+        "yapay zeka": "Yapay Zeka", "ai": "Yapay Zeka",
+        "mobil": "Mobil", "telefon": "Mobil",
+        "bilgisayar": "Bilgisayar", "donanım": "Bilgisayar", "donanim": "Bilgisayar",
+        "oyun": "Oyun",
+        "otomotiv": "Otomobil", "otomobil": "Otomobil",
+        "uzay": "Uzay Teknolojileri", "uzay teknolojileri": "Uzay Teknolojileri",
+        "dizi & sinema": "Sinema", "sinema": "Sinema", "dizi": "Sinema",
+        "rehberler": "İnceleme", "rehber": "İnceleme", "inceleme": "İnceleme",
+    }
+    return esleme.get(k, "Yapay Zeka")
+
+
+def gorsel_boyutu_kontrol(url):
+    """Uzak gorselin boyutunu indirmeden/az veriyle kontrol etmeye calisir.
+    Pillow gerektirmez; HTML <img> tarafinda 16:9 kirpma uygulanir.
+    Bilinmeyen boyutta ama gecerli image content-type varsa kabul eder.
+    """
+    if not url or not url.startswith(("http://", "https://")):
+        return False
+    try:
+        h = {
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/153.0 Safari/537.36",
+            "Accept": "image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8",
+        }
+        r = requests.get(url, headers=h, timeout=15, stream=True, allow_redirects=True)
+        if r.status_code != 200:
+            return False
+        ct = (r.headers.get("content-type") or "").lower()
+        if not ct.startswith("image/"):
+            return False
+        length = r.headers.get("content-length")
+        if length and int(length) < 20000:
+            return False
+        return True
+    except Exception:
+        return False
+
+
+def sayfa_gorsel_adaylari(url):
+    """Sayfadaki sosyal kapak adaylarini sirali dondurur."""
+    if not url:
+        return []
+    try:
+        headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/153.0 Safari/537.36"}
+        r = requests.get(url, headers=headers, timeout=15)
+        if r.status_code != 200:
+            return []
+        soup = BeautifulSoup(r.text, "html.parser")
+        adaylar = []
+        for attr, key, value in [
+            ("property", "og:image", "content"),
+            ("property", "og:image:secure_url", "content"),
+            ("name", "twitter:image", "content"),
+            ("name", "twitter:image:src", "content"),
+        ]:
+            tag = soup.find("meta", attrs={attr: key})
+            if tag and tag.get(value):
+                adaylar.append(urljoin(url, tag.get(value).strip()))
+        link = soup.find("link", rel=lambda v: v and "image_src" in v)
+        if link and link.get("href"):
+            adaylar.append(urljoin(url, link["href"].strip()))
+        return list(dict.fromkeys(adaylar))
+    except Exception as e:
+        print(f"Web gorsel adaylari hatasi: {e}")
+        return []
+
+
+def rss_gorsel_adaylari(entry):
+    adaylar = []
+    for key in ("media_content", "media_thumbnail"):
+        try:
+            for media in entry.get(key, []) or []:
+                u = media.get("url")
+                if u:
+                    adaylar.append(u)
+        except Exception:
+            pass
+    try:
+        for enclosure in entry.get("enclosures", []) or []:
+            u = enclosure.get("href")
+            t = enclosure.get("type", "")
+            if u and (t.startswith("image/") or re.search(r"\.(jpe?g|png|webp)(\?|$)", u, re.I)):
+                adaylar.append(u)
+    except Exception:
+        pass
+    return list(dict.fromkeys(adaylar))
+
+
+def en_iyi_gorseli_sec(entry, haber_url, arama_terimi, kategori):
+    """RSS -> OG -> Pexels -> kategori fallback."""
+    for u in rss_gorsel_adaylari(entry):
+        if gorsel_boyutu_kontrol(u):
+            return u, "RSS", None
+
+    for u in sayfa_gorsel_adaylari(haber_url):
+        if gorsel_boyutu_kontrol(u):
+            return u, "Kaynak sayfa", None
+
+    p_url, fotografci = pexels_gorsel_bul(arama_terimi)
+    if p_url and gorsel_boyutu_kontrol(p_url):
+        return p_url, "Pexels", fotografci
+
+    fallback = KATEGORI_FALLBACK.get(kategori)
+    if fallback:
+        return fallback, "NetDijital kategori kapağı", None
+
+    return None, None, None
+
+
+# ============================================================
+# GEMINI HABER URETIMI
+# ============================================================
+
+def llm_ile_makale_uret(orijinal_baslik, orijinal_ozet):
     if not client:
-
-        print(
-            "GEMINI_API_KEY tanimli degil."
-        )
-
+        print("GEMINI_API_KEY tanimli degil.")
         return None, False
 
-
     prompt = f"""
-Sen Türkiye'nin en büyük teknoloji haber sitelerinden
-birinde çalışan kıdemli teknoloji editörü ve SEO uzmanısın.
+Sen NetDijital icin calisan deneyimli bir Turkce teknoloji editorusun.
+Asagidaki RSS bilgisini temel alarak ozgun, dogal ve olgusal bir teknoloji haberi yaz.
 
-Aşağıdaki haber bilgisini temel alarak tamamen özgün
-bir Türkçe teknoloji haberi oluştur.
-
-ORİJİNAL BAŞLIK:
+ORIJINAL BASLIK:
 {orijinal_baslik}
 
-ORİJİNAL ÖZET:
+ORIJINAL OZET:
 {orijinal_ozet}
 
 KURALLAR:
+1. Yalnizca verilen bilgilerden desteklenebilen olgulari kesin ifade et; eksik bilgiyi uydurma.
+2. Kaynak metni cumle cumle yeniden yazma veya uzun ifadeleri kopyalama.
+3. 600-1000 Turkce kelime hedefle; bilgi yetersizse metni yapay olarak uzatma.
+4. Baslik bilgilendirici ve clickbait olmayan bir haber basligi olsun.
+5. Giris paragrafi haberi dogrudan anlatsin; kisa paragraflar ve gerekli yerlerde H2 kullan.
+6. "Bu yazida", "gelin bakalim", "heyecan verici" gibi kalip dolgu ifadelerinden kacın.
+7. Spekulasyon, kullanici tepkisi veya sektor etkisi icin veri verilmemisse bunu olgu gibi uydurma.
+8. Ana kategori TAM OLARAK su sekiz degerden biri olmali:
+   Yapay Zeka, Mobil, Bilgisayar, Oyun, Otomobil, Uzay Teknolojileri, Sinema, İnceleme
+9. Etiketler ana kategori disinda 2-5 adet olsun. Marka, urun, platform veya spesifik teknoloji adlarini kullan.
+10. "Teknoloji", "Teknoloji Haberleri", "Guncel Teknoloji", "Gundem", kaynak site adi gibi genel etiketler uretme.
+11. Gorsel arama terimi 3-7 kelimelik, somut ve Ingilizce olsun.
+12. Meta aciklamasi yaklasik 140-160 karakter olsun.
+13. Sadece gecerli JSON dondur.
 
-1. Haber 750 ile 1200 Türkçe kelime arasında olsun.
-
-2. Orijinal metni cümle cümle çevirme veya yeniden yazma.
-
-3. Bilgileri kendi haber anlatımınla sentezle.
-
-4. Haber doğal bir insan gazeteci tarafından yazılmış
-   gibi okunmalı.
-
-5. Gereksiz yapay zeka kalıpları kullanma.
-
-6. Başlık Google aramalarında ilgi çekecek ancak
-   clickbait olmayacak şekilde hazırlanmalı.
-
-7. İlk paragraf haberi doğrudan anlatmalı.
-
-8. En az 4 adet H2 başlığı kullan.
-
-9. Gerekirse H3 başlıkları kullan.
-
-10. Kısa paragraflar kullan.
-
-11. Önemli bilgileri gerektiğinde madde işaretleriyle ver.
-
-12. Anahtar kelimeleri doğal biçimde kullan.
-
-13. Ana anahtar kelimeyi başlıkta ve girişte
-    doğal biçimde kullan.
-
-14. Haber içinde "Bu yazıda..." gibi yapay girişler kullanma.
-
-15. Okuyucuya doğrudan bilgi veren haber dili kullan.
-
-16. Konuya ilişkin internet dünyasındaki yankıları,
-    kullanıcıların ilgisini, sektör açısından önemini
-    ve olası etkilerini değerlendir.
-
-17. Elindeki bilgilerde kesin olmayan bir iddia varsa
-    bunu kesin gerçek gibi yazma.
-
-18. Kaynak sitelerin metnini veya uzun ifadelerini
-    kopyalama.
-
-19. Haber içinde kaynak kuruluşların isimlerini
-    gereksiz şekilde tekrar etme.
-
-20. Sonuç bölümü okuyucuya konunun bundan sonra
-    neden önemli olacağını açıklasın.
-
-21. Meta açıklaması yaklaşık 140-160 karakter olsun.
-
-22. 5-10 arası SEO etiketi üret.
-
-23. Görsel için İngilizce bir arama terimi üret.
-
-24. Sadece JSON döndür.
-
-JSON ŞABLONU:
-
+JSON:
 {{
-  "baslik": "SEO uyumlu haber başlığı",
+  "baslik": "...",
   "icerik_html": "<p>...</p><h2>...</h2><p>...</p>",
-  "meta_aciklama": "SEO meta açıklaması",
-  "kategori": "Teknoloji",
-  "etiketler": [
-    "Etiket 1",
-    "Etiket 2"
-  ],
-  "gorsel_arama_terimi": "technology AI smartphone"
+  "meta_aciklama": "...",
+  "kategori": "Yapay Zeka",
+  "etiketler": ["Gemini", "Google"],
+  "gorsel_arama_terimi": "Google Gemini AI interface"
 }}
 """
 
-
     for deneme in range(3):
-
         try:
-
             response = client.models.generate_content(
-
                 model="gemini-2.5-flash",
-
                 contents=prompt,
-
                 config=types.GenerateContentConfig(
-
-                    temperature=0.35,
-
+                    temperature=0.30,
                     max_output_tokens=8192,
-
-                    response_mime_type="application/json"
-                )
+                    response_mime_type="application/json",
+                ),
             )
-
-
-            metin = (
-                response.text or ""
-            ).strip()
-
-
+            metin = (response.text or "").strip()
             if metin.startswith("```"):
+                satirlar = metin.splitlines()[1:]
+                if satirlar and satirlar[-1].startswith("```"):
+                    satirlar = satirlar[:-1]
+                metin = "\n".join(satirlar).strip()
+            data = json.loads(metin)
+            for alan in ("baslik", "icerik_html", "kategori", "etiketler", "gorsel_arama_terimi"):
+                if alan not in data:
+                    raise ValueError(f"Eksik JSON alani: {alan}")
+            data["kategori"] = kategori_normalize(data.get("kategori"))
+            temiz = []
+            yasak = {"teknoloji", "teknoloji haberleri", "güncel teknoloji", "guncel teknoloji", "gündem", "gundem", "dijital dünya", "dijital dunya"}
+            for e in data.get("etiketler", []):
+                e = str(e).strip()
+                if e and e.lower() not in yasak and e.lower() != data["kategori"].lower() and e not in temiz:
+                    temiz.append(e)
+            data["etiketler"] = temiz[:5]
+            return data, True
+        except Exception as e:
+            print(f"Gemini deneme {deneme + 1}/3 hatasi: {e}")
+            time.sleep(2 + deneme)
+    return None, False
 
-                satirlar = (
-                    metin.splitlines()
-                )
 
-                if satirlar:
+# ============================================================
+# ICERIK YARDIMCILARI
+# ============================================================
 
-                    satirlar = satirlar[1:]
+def entry_ozet(entry):
+    ham = entry.get("summary") or entry.get("description") or ""
+    if not ham and entry.get("content"):
+        try:
+            ham = entry.content[0].value
+        except Exception:
+            ham = ""
+    soup = BeautifulSoup(ham, "html.parser")
+    metin = " ".join(soup.stripped_strings)
+    return html.unescape(metin)[:12000]
 
-                if (
-                    satirlar
-                    and satirlar[-1].startswith("
+
+def kapak_html(gorsel_url, baslik, gorsel_kaynagi=None, fotografci=None):
+    if not gorsel_url:
+        return ""
+    alt = html.escape(baslik, quote=True)
+    url = html.escape(gorsel_url, quote=True)
+    kredi = ""
+    if gorsel_kaynagi == "Pexels" and fotografci:
+        kredi = f'<p style="font-size:12px;color:#777;margin:6px 0 18px">Görsel: Pexels / {html.escape(str(fotografci))}</p>'
+    return (
+        '<div class="netdijital-cover" style="width:100%;aspect-ratio:16/9;overflow:hidden;'
+        'border-radius:8px;margin:0 0 18px">'
+        f'<img src="{url}" alt="{alt}" loading="eager" style="width:100%;height:100%;object-fit:cover;object-position:center;display:block" />'
+        '</div>' + kredi
+    )
+
+
+def kaynak_html(kaynak_adi, kaynak_url):
+    ad = html.escape(kaynak_adi or "Orijinal kaynak")
+    u = html.escape(kaynak_url or "#", quote=True)
+    return (
+        '<hr style="margin:28px 0 16px;border:0;border-top:1px solid #e5e5e5">'
+        '<p style="font-size:14px"><strong>Kaynak:</strong> '
+        f'<a href="{u}" rel="nofollow noopener" target="_blank">{ad}</a></p>'
+    )
+
+
+# ============================================================
+# BLOGGER
+# ============================================================
+
+def blogger_yayinla(access_token, baslik, icerik, etiketler, taslak=False):
+    if not access_token or not BLOGGER_BLOG_ID:
+        return None
+    endpoint = f"https://www.googleapis.com/blogger/v3/blogs/{BLOGGER_BLOG_ID}/posts/"
+    params = {"isDraft": "true" if taslak else "false"}
+    headers = {"Authorization": f"Bearer {access_token}", "Content-Type": "application/json; charset=UTF-8"}
+    payload = {"kind": "blogger#post", "title": baslik, "content": icerik, "labels": etiketler}
+    try:
+        r = requests.post(endpoint, headers=headers, params=params, json=payload, timeout=30)
+        if r.status_code in (200, 201):
+            return r.json()
+        print("Blogger yayin hatasi:", r.status_code, r.text)
+    except Exception as e:
+        print(f"Blogger istek hatasi: {e}")
+    return None
+
+
+def gerekli_ayarlar_tamam():
+    gerekli = {
+        "BLOGGER_CLIENT_ID": CLIENT_ID,
+        "BLOGGER_CLIENT_SECRET": CLIENT_SECRET,
+        "BLOGGER_REFRESH_TOKEN": REFRESH_TOKEN,
+        "BLOGGER_BLOG_ID": BLOGGER_BLOG_ID,
+        "GEMINI_API_KEY": GEMINI_API_KEY,
+    }
+    eksik = [k for k, v in gerekli.items() if not v]
+    if eksik:
+        print("Eksik ortam degiskenleri:", ", ".join(eksik))
+        return False
+    return True
+
+
+# ============================================================
+# ANA AKIS
+# ============================================================
+
+def main():
+    if not gerekli_ayarlar_tamam():
+        return
+
+    history = load_history()
+    yayinlanan = set(history.get("yayinlanan_linkler", []))
+    kaynak_sayisi = len(RSS_SOURCES)
+    baslangic = int(history.get("son_kaynak_index", 0)) % kaynak_sayisi
+
+    secilen = None
+    secilen_kaynak = None
+    secilen_index = None
+
+    # Her calismada kaynaklari sirayla dolas; ilk yeni haberi sec.
+    for offset in range(kaynak_sayisi):
+        idx = (baslangic + offset) % kaynak_sayisi
+        kaynak = RSS_SOURCES[idx]
+        feed = fetch_feed(kaynak["url"], kaynak["kaynak"])
+        for entry in feed.entries[:12]:
+            link = normalize_url(entry.get("link"))
+            baslik = (entry.get("title") or "").strip()
+            if link and baslik and link not in yayinlanan:
+                secilen = entry
+                secilen_kaynak = kaynak
+                secilen_index = idx
+                break
+        if secilen:
+            break
+
+    if not secilen:
+        print("Yeni haber bulunamadi.")
+        return
+
+    kaynak_url = normalize_url(secilen.get("link"))
+    orijinal_baslik = html.unescape((secilen.get("title") or "").strip())
+    ozet = entry_ozet(secilen)
+    print(f"Secilen haber: {orijinal_baslik}")
+
+    makale, ok = llm_ile_makale_uret(orijinal_baslik, ozet)
+    if not ok or not makale:
+        print("Makale uretilemedi; yayin yapilmadi.")
+        return
+
+    kategori = kategori_normalize(makale.get("kategori"))
+    etiketler = [kategori] + [e for e in makale.get("etiketler", []) if e != kategori]
+    etiketler = etiketler[:6]  # 1 ana kategori + en fazla 5 kontrollu etiket
+
+    gorsel_url, gorsel_kaynagi, fotografci = en_iyi_gorseli_sec(
+        secilen,
+        kaynak_url,
+        makale.get("gorsel_arama_terimi", "technology"),
+        kategori,
+    )
+
+    icerik = (
+        kapak_html(gorsel_url, makale["baslik"], gorsel_kaynagi, fotografci)
+        + makale.get("icerik_html", "")
+        + kaynak_html(secilen_kaynak["kaynak"], kaynak_url)
+    )
+
+    token = get_access_token(CLIENT_ID, CLIENT_SECRET, REFRESH_TOKEN)
+    if not token:
+        print("Google access token alinamadi.")
+        return
+
+    sonuc = blogger_yayinla(
+        token,
+        makale["baslik"],
+        icerik,
+        etiketler,
+        TASLAK_OLARAK_KAYDET,
+    )
+    if not sonuc:
+        print("Yayin basarisiz; history guncellenmedi.")
+        return
+
+    yayinlanan.add(kaynak_url)
+    history["yayinlanan_linkler"] = list(yayinlanan)
+    history["son_kaynak_index"] = (secilen_index + 1) % kaynak_sayisi
+    history["son_paylasim_zamani"] = int(time.time())
+    save_history(history)
+    github_history_save()
+
+    durum = "Taslak" if TASLAK_OLARAK_KAYDET else "Yayinlandi"
+    print(f"{durum}: {sonuc.get('url') or sonuc.get('id')}")
+    print(f"Kategori: {kategori} | Etiketler: {', '.join(etiketler)}")
+    print(f"Gorsel: {gorsel_kaynagi or 'yok'} - {gorsel_url or 'fallback tanimsiz'}")
+
+
+if __name__ == "__main__":
+    try:
+        main()
+    except Exception:
+        traceback.print_exc()
+        raise
