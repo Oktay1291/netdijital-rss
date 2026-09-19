@@ -1,3 +1,4 @@
+# NetDijital v1.3.7 - AI Icerik Kalite Kontrolu
 # NetDijital rss_bot.py v1.3.6 - Gorsel alaka kontrolu ve gelismis Pexels aramasi
 import os
 import json
@@ -999,6 +1000,134 @@ JSON:
 
 
 # ============================================================
+# AI ICERIK KALITE KONTROLU
+# ============================================================
+
+def makale_kalite_kontrol(makale, orijinal_baslik, orijinal_ozet):
+    """Uretilen haberi kaynak RSS bilgisiyle ikinci kez kontrol eder.
+
+    Baslik ve icerik_html duzeltilebilir. Kategori, etiketler ve gorsel arama
+    terimi ilk uretimden korunur; boylece kalite kontrolu yayin siniflandirmasini
+    gereksiz yere degistirmez.
+    """
+    if not client or not makale:
+        return makale, False, ["Kalite kontrolu calistirilamadi"]
+
+    prompt = f"""
+Sen NetDijital'in ikinci asama Turkce haber kalite editorusun.
+
+KAYNAK BASLIK:
+{orijinal_baslik}
+
+KAYNAK OZET:
+{orijinal_ozet}
+
+URETILEN BASLIK:
+{makale.get("baslik", "")}
+
+URETILEN HABER HTML:
+{makale.get("icerik_html", "")}
+
+GOREV:
+Uretilen haberi yalnizca yukaridaki kaynak baslik ve kaynak ozet ile
+karsilastir. Disaridan yeni bilgi ekleme.
+
+KONTROL KURALLARI:
+1. Kaynakta desteklenmeyen rakam, teknik ozellik, tarih, fiyat, alinti,
+   sirket aciklamasi, kesin gelecek iddiasi veya neden-sonuc iddiasi varsa kaldir.
+2. Baslik kaynak tarafindan desteklenmeli; clickbait, abarti veya kaynakta
+   olmayan kesinlik icermemeli.
+3. Ayni bilgi tekrar ediyorsa tek ve guclu anlatima indir.
+4. Turkce dogal, haber diliyle ve akici olsun.
+5. "teknoloji dunyasinda heyecan yaratti", "dikkatleri uzerine cekiyor",
+   "gelecege isik tutuyor", "devrim yaratacak", "oyunun kurallarini degistirecek"
+   gibi kanitsiz AI/clickbait kaliplarini temizle.
+6. Kaynak bilgi azsa haberi yapay olarak uzatma. Kaynakta olmayan bilgiyle
+   600-1000 kelime hedefine ulasmaya calisma.
+7. HTML'de yalnizca temiz paragraf ve gerektiginde h2 kullan; kaynak linki,
+   kaynak site adresi veya yeni kaynak ekleme.
+8. Anlami degistirmeden yazim ve noktalama sorunlarini duzelt.
+9. Sadece gecerli JSON dondur.
+
+JSON:
+{{
+  "durum": "TEMIZ" veya "DUZELTILDI",
+  "sorunlar": ["kisa sorun aciklamasi"],
+  "baslik": "...",
+  "icerik_html": "<p>...</p>..."
+}}
+"""
+
+    modeller = ["gemini-3.6-flash", "gemini-3.5-flash-lite"]
+    gecici_isaretler = ("429", "408", "500", "502", "503", "504",
+                        "RESOURCE_EXHAUSTED", "UNAVAILABLE", "DEADLINE_EXCEEDED")
+    beklemeler = (5, 10, 20)
+
+    for model in modeller:
+        print(f"Kalite kontrol modeli deneniyor: {model}")
+        for deneme, temel_bekleme in enumerate(beklemeler, start=1):
+            try:
+                response = client.models.generate_content(
+                    model=model,
+                    contents=prompt,
+                    config=types.GenerateContentConfig(
+                        max_output_tokens=8192,
+                        response_mime_type="application/json",
+                    ),
+                )
+                metin = (response.text or "").strip()
+                if metin.startswith("```"):
+                    satirlar = metin.splitlines()[1:]
+                    if satirlar and satirlar[-1].startswith("```"):
+                        satirlar = satirlar[:-1]
+                    metin = "\n".join(satirlar).strip()
+
+                kontrol = json.loads(metin)
+                yeni_baslik = str(kontrol.get("baslik") or makale.get("baslik") or "").strip()
+                yeni_html = str(kontrol.get("icerik_html") or makale.get("icerik_html") or "").strip()
+                if not yeni_baslik or not yeni_html:
+                    raise ValueError("Kalite kontrolu bos baslik/icerik dondurdu.")
+
+                sorunlar = kontrol.get("sorunlar") or []
+                if not isinstance(sorunlar, list):
+                    sorunlar = [str(sorunlar)]
+                sorunlar = [str(s).strip() for s in sorunlar if str(s).strip()][:8]
+
+                duzeltilmis = dict(makale)
+                duzeltilmis["baslik"] = yeni_baslik
+                duzeltilmis["icerik_html"] = yeni_html
+
+                durum = str(kontrol.get("durum") or "TEMIZ").upper()
+                print(f"Kalite kontrolu tamamlandi: {durum} | model={model}")
+                if sorunlar:
+                    for sorun in sorunlar:
+                        print(f"  Kalite notu: {sorun}")
+                else:
+                    print("  Kalite notu: sorun bulunmadi")
+
+                return duzeltilmis, True, sorunlar
+
+            except Exception as e:
+                hata = str(e)
+                gecici = any(isaret in hata for isaret in gecici_isaretler)
+                print(f"Kalite kontrol {model} deneme {deneme}/{len(beklemeler)} hatasi: {e}")
+
+                if not gecici:
+                    print(f"Kalite kontrolunde kalici/istek hatasi; {model} tekrar denenmeyecek.")
+                    break
+
+                if deneme < len(beklemeler):
+                    bekle = temel_bekleme + random.uniform(0.5, 2.0)
+                    print(f"Kalite kontrol gecici hata; {bekle:.1f} saniye sonra yeniden denenecek.")
+                    time.sleep(bekle)
+                else:
+                    print(f"Kalite kontrol icin {model} kullanilamadi; fallback modele geciliyor.")
+
+    print("Kalite kontrolu tamamlanamadi; guvenlik geregi yayin akisi durdurulacak.")
+    return makale, False, ["Kalite kontrolu tamamlanamadi"]
+
+
+# ============================================================
 # ICERIK YARDIMCILARI
 # ============================================================
 
@@ -1128,6 +1257,13 @@ def main():
         print("Makale uretilemedi; yayin yapilmadi.")
         return
 
+    makale, kalite_ok, kalite_sorunlari = makale_kalite_kontrol(
+        makale, orijinal_baslik, ozet
+    )
+    if not kalite_ok:
+        print("AI kalite kontrolu tamamlanamadi; guvenlik geregi yayin yapilmadi.")
+        return
+
     kategori = kategori_normalize(makale.get("kategori"))
     etiketler = [kategori] + [e for e in makale.get("etiketler", []) if e != kategori]
     etiketler = etiketler[:6]  # 1 ana kategori + en fazla 5 kontrollu etiket
@@ -1157,6 +1293,11 @@ def main():
         print(f"Kapak URL     : {gorsel_url or 'yok'}")
         print(f"Kapak hedefi  : 1200x675")
         print(f"Kaynak        : {secilen_kaynak['kaynak']}")
+        print(f"Kalite kontrol: BASARILI")
+        if kalite_sorunlari:
+            print(f"Kalite notlari: {' | '.join(kalite_sorunlari)}")
+        else:
+            print("Kalite notlari: sorun bulunmadi")
         print(f"HTML uzunlugu : {len(icerik)} karakter")
         print("SONUC          : BLOGGER YAYINI ATLANDI")
         print("=" * 64)
