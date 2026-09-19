@@ -1,3 +1,4 @@
+# NetDijital rss_bot.py v1.3.4 - Gorsel filtre iyilestirmesi
 import os
 import json
 import random
@@ -662,7 +663,9 @@ def _gorsel_indir(url):
         ct = (r.headers.get("content-type") or "").lower()
         if not ct.startswith("image/"):
             return None, None
-        if len(r.content) < 25000 or len(r.content) > 15 * 1024 * 1024:
+        # AVIF/WebP gibi modern formatlar cok iyi sikistirilabildigi icin
+        # dosya boyutunu kalite olcutu olarak kullanmiyoruz.
+        if not r.content or len(r.content) > 15 * 1024 * 1024:
             return None, None
         im = Image.open(io.BytesIO(r.content))
         im.load()
@@ -698,8 +701,10 @@ def gorsel_tani_kontrol(url, kaynak="Bilinmeyen"):
         if not ct.startswith("image/"):
             print(f"Gorsel RED ({kaynak}) - neden: yanit bir gorsel degil ({ct or 'Content-Type yok'})")
             return False, None, None
-        if boyut < 25000:
-            print(f"Gorsel RED ({kaynak}) - neden: dosya cok kucuk ({boyut/1024:.1f} KB < 24.4 KB)")
+        # Dosya boyutu tek basina kalite gostergesi degildir. Ozellikle AVIF/WebP
+        # 25 KB altinda olsa bile yeterli piksel boyutunda olabilir.
+        if boyut <= 0:
+            print(f"Gorsel RED ({kaynak}) - neden: bos dosya")
             return False, None, None
         if boyut > 15 * 1024 * 1024:
             print(f"Gorsel RED ({kaynak}) - neden: dosya cok buyuk ({boyut/1024/1024:.1f} MB > 15 MB)")
@@ -715,11 +720,11 @@ def gorsel_tani_kontrol(url, kaynak="Bilinmeyen"):
         w, h = im.size
         oran = w / h if h else 0
         print(f"  Piksel: {w}x{h} | Oran: {oran:.3f} | Format: {im.format or 'bilinmiyor'}")
-        if w < 1000:
-            print(f"Gorsel RED ({kaynak}) - neden: genislik yetersiz ({w}px < 1000px)")
+        if w < 800:
+            print(f"Gorsel RED ({kaynak}) - neden: genislik yetersiz ({w}px < 800px)")
             return False, None, None
-        if h < 500:
-            print(f"Gorsel RED ({kaynak}) - neden: yukseklik yetersiz ({h}px < 500px)")
+        if h < 450:
+            print(f"Gorsel RED ({kaynak}) - neden: yukseklik yetersiz ({h}px < 450px)")
             return False, None, None
         if oran < 1.30:
             print(f"Gorsel RED ({kaynak}) - neden: fazla dikey/kare (oran {oran:.3f} < 1.30)")
@@ -759,7 +764,7 @@ def gorseli_1200x675_hazirla(url):
     if im is None:
         return None
     w, h = im.size
-    if w < 1000 or h < 500:
+    if w < 800 or h < 450:
         return None
     oran = w / h if h else 0
     if oran < 1.30 or oran > 2.50:
