@@ -631,7 +631,7 @@ YAZAR_BY_KATEGORI = {
     "Otomotiv": "Murat Üşengeç",
     "Uzay": "Miraç Demir",
     "Dizi & Sinema": "Metin Oktay",
-    "Rehberler": "NetDijital",
+    "Rehberler": "Ege Özdemir",
 }
 
 
