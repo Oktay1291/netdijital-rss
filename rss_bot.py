@@ -588,7 +588,7 @@ def pexels_gorsel_bul(anahtar_kelime):
 
 
 # ============================================================
-# NETDIJITAL KATEGORI / GORSEL SISTEMI v1.0
+# NETDIJITAL KATEGORI / GORSEL SISTEMI v1.2
 # ============================================================
 
 ANA_KATEGORILER = [
@@ -596,17 +596,25 @@ ANA_KATEGORILER = [
     "Otomobil", "Uzay Teknolojileri", "Sinema", "İnceleme"
 ]
 
-# Kategori fallback kapaklarini daha sonra GitHub/Blogger'a yukleyip
-# bu ortam degiskenlerine URL olarak tanimlayabilirsin.
+# NetDijital kategori fallback kapaklari repo icinde sabit tutulur.
+# GITHUB_REPOSITORY GitHub Actions tarafindan otomatik gelir. Yerelde calistirirken
+# tanimli degilse NetDijital reposuna geri duser.
+FALLBACK_REPOSITORY = GITHUB_REPOSITORY or "Oktay1291/netdijital-rss"
+FALLBACK_BRANCH = GITHUB_BRANCH or "main"
+FALLBACK_BASE_URL = (
+    f"https://raw.githubusercontent.com/{FALLBACK_REPOSITORY}/"
+    f"{FALLBACK_BRANCH}/assets/fallback"
+)
+
 KATEGORI_FALLBACK = {
-    "Yapay Zeka": os.getenv("FALLBACK_YAPAY_ZEKA"),
-    "Mobil": os.getenv("FALLBACK_MOBIL"),
-    "Bilgisayar": os.getenv("FALLBACK_BILGISAYAR"),
-    "Oyun": os.getenv("FALLBACK_OYUN"),
-    "Otomobil": os.getenv("FALLBACK_OTOMOTIV"),
-    "Uzay Teknolojileri": os.getenv("FALLBACK_UZAY"),
-    "Sinema": os.getenv("FALLBACK_SINEMA"),
-    "İnceleme": os.getenv("FALLBACK_REHBERLER"),
+    "Yapay Zeka": f"{FALLBACK_BASE_URL}/netdijital-fallback-yapay-zeka-1200x675.jpg",
+    "Mobil": f"{FALLBACK_BASE_URL}/netdijital-fallback-mobil-1200x675.jpg",
+    "Bilgisayar": f"{FALLBACK_BASE_URL}/netdijital-fallback-bilgisayar-1200x675.jpg",
+    "Oyun": f"{FALLBACK_BASE_URL}/netdijital-fallback-oyun-1200x675.jpg",
+    "Otomobil": f"{FALLBACK_BASE_URL}/netdijital-fallback-otomotiv-1200x675.jpg",
+    "Uzay Teknolojileri": f"{FALLBACK_BASE_URL}/netdijital-fallback-uzay-1200x675.jpg",
+    "Sinema": f"{FALLBACK_BASE_URL}/netdijital-fallback-dizi-sinema-1200x675.jpg",
+    "İnceleme": f"{FALLBACK_BASE_URL}/netdijital-fallback-rehberler-1200x675.jpg",
 }
 
 MIN_GORSEL_GENISLIK = 900
@@ -786,9 +794,11 @@ def rss_gorsel_adaylari(entry):
 
 
 def en_iyi_gorseli_sec(entry, haber_url, arama_terimi, kategori, baslik="haber"):
-    """RSS -> OG -> Pexels -> kategori fallback.
-    Uygun aday bulunursa 1200x675'e donusturup GitHub'da barindirir.
-    Yukleme basarisizsa orijinal URL'ye geri doner.
+    """RSS -> kaynak sayfa -> Pexels -> NetDijital kategori fallback.
+
+    Gercek/Pexels adaylari kalite kontrolunden gecerse 1200x675'e donusturulur
+    ve GitHub assets/covers altinda barindirilir. Hicbir aday uygun degilse
+    assets/fallback altindaki hazir 1200x675 kategori kapagi dogrudan kullanilir.
     """
     adaylar = []
     adaylar.extend((u, "RSS", None) for u in rss_gorsel_adaylari(entry))
@@ -798,25 +808,34 @@ def en_iyi_gorseli_sec(entry, haber_url, arama_terimi, kategori, baslik="haber")
     if p_url:
         adaylar.append((p_url, "Pexels", fotografci))
 
-    fallback = KATEGORI_FALLBACK.get(kategori)
-    if fallback:
-        adaylar.append((fallback, "NetDijital kategori kapağı", None))
-
     gorulen = set()
     for u, kaynak, fotografci in adaylar:
         if not u or u in gorulen:
             continue
         gorulen.add(u)
         if not gorsel_boyutu_kontrol(u):
+            print(f"Gorsel elendi ({kaynak}): {u[:120]}")
             continue
+
         jpeg = gorseli_1200x675_hazirla(u)
-        if jpeg:
-            hosted = github_kapak_yukle(jpeg, baslik)
-            if hosted:
-                return hosted, kaynak + " / 1200x675", fotografci
-        # Hosting basarisizsa siteyi kapaksiz birakma.
+        if not jpeg:
+            continue
+
+        hosted = github_kapak_yukle(jpeg, baslik)
+        if hosted:
+            return hosted, kaynak + " / 1200x675", fotografci
+
+        # GitHub'a islenmis kapak yuklenemezse uygun orijinal adayi kullan.
+        print(f"Islenmis kapak yuklenemedi; orijinal URL kullaniliyor ({kaynak}).")
         return u, kaynak, fotografci
 
+    # Son guvenli katman: kategoriye ait hazir NetDijital 1200x675 kapagi.
+    fallback = KATEGORI_FALLBACK.get(kategori)
+    if fallback:
+        print(f"Kategori fallback kapagi kullaniliyor: {kategori}")
+        return fallback, "NetDijital kategori kapağı / 1200x675", None
+
+    print(f"Fallback bulunamadi: {kategori}")
     return None, None, None
 
 
