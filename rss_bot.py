@@ -671,19 +671,78 @@ def _gorsel_indir(url):
         return None, None
 
 
+def gorsel_tani_kontrol(url, kaynak="Bilinmeyen"):
+    """Kapak adayini ayrintili kontrol eder ve neden kabul/red edildigini loglar.
+
+    Donus: (uygun_mu, image, ham_bytes)
+    """
+    if not url or not str(url).startswith(("http://", "https://")):
+        print(f"Gorsel RED ({kaynak}) - neden: gecersiz URL: {url}")
+        return False, None, None
+
+    try:
+        headers = {
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/153.0 Safari/537.36",
+            "Accept": "image/avif,image/webp,image/apng,image/*,*/*;q=0.8",
+            "Referer": url,
+        }
+        r = requests.get(url, headers=headers, timeout=20, allow_redirects=True)
+        print(f"Gorsel kontrol ({kaynak}): HTTP {r.status_code} | {r.url[:140]}")
+        if r.status_code != 200:
+            print(f"Gorsel RED ({kaynak}) - neden: HTTP {r.status_code}")
+            return False, None, None
+
+        ct = (r.headers.get("content-type") or "").lower()
+        boyut = len(r.content)
+        print(f"  Content-Type: {ct or 'bilinmiyor'} | Dosya: {boyut/1024:.1f} KB")
+        if not ct.startswith("image/"):
+            print(f"Gorsel RED ({kaynak}) - neden: yanit bir gorsel degil ({ct or 'Content-Type yok'})")
+            return False, None, None
+        if boyut < 25000:
+            print(f"Gorsel RED ({kaynak}) - neden: dosya cok kucuk ({boyut/1024:.1f} KB < 24.4 KB)")
+            return False, None, None
+        if boyut > 15 * 1024 * 1024:
+            print(f"Gorsel RED ({kaynak}) - neden: dosya cok buyuk ({boyut/1024/1024:.1f} MB > 15 MB)")
+            return False, None, None
+
+        try:
+            im = Image.open(io.BytesIO(r.content))
+            im.load()
+        except Exception as e:
+            print(f"Gorsel RED ({kaynak}) - neden: Pillow acamadi: {type(e).__name__}: {e}")
+            return False, None, None
+
+        w, h = im.size
+        oran = w / h if h else 0
+        print(f"  Piksel: {w}x{h} | Oran: {oran:.3f} | Format: {im.format or 'bilinmiyor'}")
+        if w < 1000:
+            print(f"Gorsel RED ({kaynak}) - neden: genislik yetersiz ({w}px < 1000px)")
+            return False, None, None
+        if h < 500:
+            print(f"Gorsel RED ({kaynak}) - neden: yukseklik yetersiz ({h}px < 500px)")
+            return False, None, None
+        if oran < 1.30:
+            print(f"Gorsel RED ({kaynak}) - neden: fazla dikey/kare (oran {oran:.3f} < 1.30)")
+            return False, None, None
+        if oran > 2.50:
+            print(f"Gorsel RED ({kaynak}) - neden: fazla panoramik (oran {oran:.3f} > 2.50)")
+            return False, None, None
+
+        print(f"Gorsel KABUL ({kaynak}): {w}x{h} -> 1200x675 islenecek")
+        return True, im, r.content
+    except requests.Timeout:
+        print(f"Gorsel RED ({kaynak}) - neden: indirme zaman asimi")
+    except requests.RequestException as e:
+        print(f"Gorsel RED ({kaynak}) - neden: HTTP/Ag hatasi: {type(e).__name__}: {e}")
+    except Exception as e:
+        print(f"Gorsel RED ({kaynak}) - neden: beklenmeyen hata: {type(e).__name__}: {e}")
+    return False, None, None
+
+
 def gorsel_boyutu_kontrol(url):
-    """Kapak icin minimum kalite/oran kontrolu."""
-    im, _ = _gorsel_indir(url)
-    if im is None:
-        return False
-    w, h = im.size
-    if w < 1000 or h < 500:
-        return False
-    oran = w / h if h else 0
-    # Cok dikey/kare veya asiri panoramik gorselleri ele.
-    if oran < 1.30 or oran > 2.50:
-        return False
-    return True
+    """Eski cagri uyumlulugu; ayrintili kontrol yeni secicide kullanilir."""
+    uygun, _, _ = gorsel_tani_kontrol(url)
+    return uygun
 
 
 def _slugify(text):
@@ -820,12 +879,19 @@ def en_iyi_gorseli_sec(entry, haber_url, arama_terimi, kategori, baslik="haber")
         if not u or u in gorulen:
             continue
         gorulen.add(u)
-        if not gorsel_boyutu_kontrol(u):
-            print(f"Gorsel elendi ({kaynak}): {u[:120]}")
+        uygun, im, ham = gorsel_tani_kontrol(u, kaynak)
+        if not uygun:
             continue
 
-        jpeg = gorseli_1200x675_hazirla(u)
-        if not jpeg:
+        try:
+            im = ImageOps.exif_transpose(im).convert("RGB")
+            im = ImageOps.fit(im, (1200, 675), method=Image.Resampling.LANCZOS, centering=(0.5, 0.5))
+            out = io.BytesIO()
+            im.save(out, format="JPEG", quality=86, optimize=True, progressive=True)
+            jpeg = out.getvalue()
+            print(f"Gorsel islendi ({kaynak}): 1200x675 JPEG | {len(jpeg)/1024:.1f} KB")
+        except Exception as e:
+            print(f"Gorsel RED ({kaynak}) - neden: 1200x675 isleme hatasi: {type(e).__name__}: {e}")
             continue
 
         hosted = github_kapak_yukle(jpeg, baslik)
