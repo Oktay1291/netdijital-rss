@@ -1,4 +1,4 @@
-# NetDijital v1.3.9 - Profesyonel CTA + Kaynaklar + Tek Kategori/Yazar
+# NetDijital v1.3.10 - Kota Optimizasyonu + AI'siz Gorsel Kontrol + Tek Kategori/Yazar
 # NetDijital rss_bot.py v1.3.6 - Gorsel alaka kontrolu ve gelismis Pexels aramasi
 import os
 import json
@@ -550,24 +550,19 @@ def pexels_gorsel_bul(anahtar_kelime, adet=5):
         print(f"Pexels hatasi: {e}"); return []
 
 def gorsel_alaka_kontrol(im, haber_basligi, arama_terimi, kaynak):
-    if not client: return kaynak != "Pexels", "Gemini istemcisi yok"
-    try:
-        kontrol=ImageOps.exif_transpose(im).convert("RGB"); kontrol.thumbnail((768,768),Image.Resampling.LANCZOS)
-        b=io.BytesIO(); kontrol.save(b,format="JPEG",quality=82,optimize=True); jpeg=b.getvalue()
-    except Exception as e: return False,f"on isleme hatasi: {type(e).__name__}: {e}"
-    prompt=(f"Bu bir teknoloji haberi kapak gorseli alaka kontroludur.\nHaber basligi: {haber_basligi}\nGorsel arama terimi: {arama_terimi}\n\n"
-            "Gorseldeki ana nesne/konu haber basligiyla anlamli bicimde ilgili mi? Genel ve ilgisiz stok fotograflari reddet. "
-            "Ayni urunun birebir fotografi sart degil; fakat konu/urun sinifi acikca uyumlu olmali. Sadece JSON dondur: "
-            '{"uygun": true, "guven": 0.0, "neden": "kisa neden"}')
-    for deneme in range(1,3):
-        try:
-            r=client.models.generate_content(model="gemini-3.5-flash-lite",contents=[prompt,types.Part.from_bytes(data=jpeg,mime_type="image/jpeg")],config=types.GenerateContentConfig(response_mime_type="application/json"))
-            veri=json.loads((r.text or "").strip()); uygun=bool(veri.get("uygun")); guven=float(veri.get("guven",0) or 0); neden=str(veri.get("neden",""))[:180]; karar=uygun and guven>=0.60
-            print(f"Gorsel alaka ({kaynak}): {'UYGUN' if karar else 'ILGISIZ'} | guven={guven:.2f} | {neden}"); return karar,neden
-        except Exception as e:
-            print(f"Gorsel alaka kontrolu deneme {deneme}/2 hatasi ({kaynak}): {type(e).__name__}: {e}")
-            if deneme<2: time.sleep(3*deneme)
-    return (False,"alaka kontrolu tamamlanamadi; Pexels adayi atlandi") if kaynak=="Pexels" else (True,"alaka kontrolu tamamlanamadi; haber kaynagi oldugu icin korundu")
+    """Gemini kotasi harcamadan kapak adayini kabul eder.
+
+    Teknik kalite/boyut/oran kontrolu gorsel_tani_kontrol() tarafindan yapilir.
+    RSS ve kaynak sayfa gorselleri haber baglamindan geldigi icin; Pexels
+    adaylari ise botun somut Ingilizce arama terimiyle getirildigi icin burada
+    ek bir Gemini vision istegi yapilmaz.
+    """
+    if kaynak == "Pexels":
+        neden = f"Pexels arama terimiyle eslesti: {arama_terimi}"
+    else:
+        neden = "Haber RSS/kaynak sayfasindan gelen gorsel adayi"
+    print(f"Gorsel alaka ({kaynak}): AI kullanilmadi | {neden}")
+    return True, neden
 
 
 # ============================================================
@@ -956,16 +951,19 @@ JSON:
 }}
 """
 
-    # Birincil model gecici olarak yogunsa ikinci modele gecilir.
-    # 429 / 408 / 5xx gibi gecici hatalarda exponential backoff + jitter uygulanir.
+    # Kota optimizasyonu:
+    # - 429/RESOURCE_EXHAUSTED: ayni modele tekrar istek atma, hemen fallback'e gec.
+    # - 503/UNAVAILABLE ve diger gecici 5xx: ayni modelde yalnizca 1 kez tekrar dene.
+    # Normal akista haber uretimi tek Gemini istegidir.
     modeller = ["gemini-3.6-flash", "gemini-3.5-flash-lite"]
-    gecici_isaretler = ("429", "408", "500", "502", "503", "504",
-                        "RESOURCE_EXHAUSTED", "UNAVAILABLE", "DEADLINE_EXCEEDED")
-    beklemeler = (5, 10, 20)
+    gecici_isaretler = ("408", "500", "502", "503", "504",
+                        "UNAVAILABLE", "DEADLINE_EXCEEDED")
+    kota_isaretleri = ("429", "RESOURCE_EXHAUSTED", "quota", "Quota")
+    max_deneme = 2
 
     for model in modeller:
         print(f"Gemini modeli deneniyor: {model}")
-        for deneme, temel_bekleme in enumerate(beklemeler, start=1):
+        for deneme in range(1, max_deneme + 1):
             try:
                 response = client.models.generate_content(
                     model=model,
@@ -992,19 +990,22 @@ JSON:
                 return data, True
             except Exception as e:
                 hata = str(e)
+                kota = any(isaret in hata for isaret in kota_isaretleri)
                 gecici = any(isaret in hata for isaret in gecici_isaretler)
-                print(f"Gemini {model} deneme {deneme}/{len(beklemeler)} hatasi: {e}")
+                print(f"Gemini {model} deneme {deneme}/{max_deneme} hatasi: {e}")
 
+                if kota:
+                    print(f"Kota siniri algilandi; {model} tekrar denenmeden fallback modele geciliyor.")
+                    break
                 if not gecici:
                     print(f"Kalici/istek hatasi gorundu; {model} icin tekrar denenmeyecek.")
                     break
-
-                if deneme < len(beklemeler):
-                    bekle = temel_bekleme + random.uniform(0.5, 2.0)
-                    print(f"Gecici hata; {bekle:.1f} saniye sonra yeniden denenecek.")
+                if deneme < max_deneme:
+                    bekle = 5 + random.uniform(0.5, 1.5)
+                    print(f"Gecici servis hatasi; yalnizca 1 tekrar yapilacak. {bekle:.1f} saniye bekleniyor.")
                     time.sleep(bekle)
                 else:
-                    print(f"{model} gecici hatalar nedeniyle kullanilamadi; fallback modele geciliyor.")
+                    print(f"{model} gecici hata nedeniyle kullanilamadi; fallback modele geciliyor.")
 
     return None, False
 
@@ -1069,13 +1070,14 @@ JSON:
 """
 
     modeller = ["gemini-3.6-flash", "gemini-3.5-flash-lite"]
-    gecici_isaretler = ("429", "408", "500", "502", "503", "504",
-                        "RESOURCE_EXHAUSTED", "UNAVAILABLE", "DEADLINE_EXCEEDED")
-    beklemeler = (5, 10, 20)
+    gecici_isaretler = ("408", "500", "502", "503", "504",
+                        "UNAVAILABLE", "DEADLINE_EXCEEDED")
+    kota_isaretleri = ("429", "RESOURCE_EXHAUSTED", "quota", "Quota")
+    max_deneme = 2
 
     for model in modeller:
         print(f"Kalite kontrol modeli deneniyor: {model}")
-        for deneme, temel_bekleme in enumerate(beklemeler, start=1):
+        for deneme in range(1, max_deneme + 1):
             try:
                 response = client.models.generate_content(
                     model=model,
@@ -1119,16 +1121,19 @@ JSON:
 
             except Exception as e:
                 hata = str(e)
+                kota = any(isaret in hata for isaret in kota_isaretleri)
                 gecici = any(isaret in hata for isaret in gecici_isaretler)
-                print(f"Kalite kontrol {model} deneme {deneme}/{len(beklemeler)} hatasi: {e}")
+                print(f"Kalite kontrol {model} deneme {deneme}/{max_deneme} hatasi: {e}")
 
+                if kota:
+                    print(f"Kalite kontrolunde kota siniri algilandi; {model} tekrar denenmeden fallback modele geciliyor.")
+                    break
                 if not gecici:
                     print(f"Kalite kontrolunde kalici/istek hatasi; {model} tekrar denenmeyecek.")
                     break
-
-                if deneme < len(beklemeler):
-                    bekle = temel_bekleme + random.uniform(0.5, 2.0)
-                    print(f"Kalite kontrol gecici hata; {bekle:.1f} saniye sonra yeniden denenecek.")
+                if deneme < max_deneme:
+                    bekle = 5 + random.uniform(0.5, 1.5)
+                    print(f"Kalite kontrol gecici servis hatasi; yalnizca 1 tekrar yapilacak. {bekle:.1f} saniye bekleniyor.")
                     time.sleep(bekle)
                 else:
                     print(f"Kalite kontrol icin {model} kullanilamadi; fallback modele geciliyor.")
