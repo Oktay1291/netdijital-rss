@@ -6,6 +6,9 @@ import html
 import traceback
 import base64
 import re
+import io
+import hashlib
+import unicodedata
 from datetime import datetime, timezone
 from urllib.parse import urljoin
 
@@ -15,6 +18,7 @@ import feedparser
 from bs4 import BeautifulSoup
 from google import genai
 from google.genai import types
+from PIL import Image, ImageOps
 
 
 # ============================================================
@@ -628,30 +632,107 @@ def kategori_normalize(kategori):
     return esleme.get(k, "Yapay Zeka")
 
 
-def gorsel_boyutu_kontrol(url):
-    """Uzak gorselin boyutunu indirmeden/az veriyle kontrol etmeye calisir.
-    Pillow gerektirmez; HTML <img> tarafinda 16:9 kirpma uygulanir.
-    Bilinmeyen boyutta ama gecerli image content-type varsa kabul eder.
-    """
+def _gorsel_indir(url):
+    """Gorseli indirir ve Pillow Image nesnesi + ham byte dondurur."""
     if not url or not url.startswith(("http://", "https://")):
-        return False
+        return None, None
     try:
-        h = {
+        headers = {
             "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/153.0 Safari/537.36",
-            "Accept": "image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8",
+            "Accept": "image/avif,image/webp,image/apng,image/*,*/*;q=0.8",
         }
-        r = requests.get(url, headers=h, timeout=15, stream=True, allow_redirects=True)
+        r = requests.get(url, headers=headers, timeout=20, allow_redirects=True)
         if r.status_code != 200:
-            return False
+            return None, None
         ct = (r.headers.get("content-type") or "").lower()
         if not ct.startswith("image/"):
-            return False
-        length = r.headers.get("content-length")
-        if length and int(length) < 20000:
-            return False
-        return True
+            return None, None
+        if len(r.content) < 25000 or len(r.content) > 15 * 1024 * 1024:
+            return None, None
+        im = Image.open(io.BytesIO(r.content))
+        im.load()
+        return im, r.content
     except Exception:
+        return None, None
+
+
+def gorsel_boyutu_kontrol(url):
+    """Kapak icin minimum kalite/oran kontrolu."""
+    im, _ = _gorsel_indir(url)
+    if im is None:
         return False
+    w, h = im.size
+    if w < 1000 or h < 500:
+        return False
+    oran = w / h if h else 0
+    # Cok dikey/kare veya asiri panoramik gorselleri ele.
+    if oran < 1.30 or oran > 2.50:
+        return False
+    return True
+
+
+def _slugify(text):
+    text = unicodedata.normalize("NFKD", str(text or ""))
+    text = "".join(c for c in text if not unicodedata.combining(c))
+    text = text.encode("ascii", "ignore").decode("ascii").lower()
+    text = re.sub(r"[^a-z0-9]+", "-", text).strip("-")
+    return (text[:70] or "haber")
+
+
+def gorseli_1200x675_hazirla(url):
+    """Uzak gorseli gercek 1200x675 JPEG kapaga donusturur."""
+    im, _ = _gorsel_indir(url)
+    if im is None:
+        return None
+    w, h = im.size
+    if w < 1000 or h < 500:
+        return None
+    oran = w / h if h else 0
+    if oran < 1.30 or oran > 2.50:
+        return None
+    try:
+        im = ImageOps.exif_transpose(im).convert("RGB")
+        # Pillow fit: merkezi koruyarak 16:9 crop + resize.
+        im = ImageOps.fit(im, (1200, 675), method=Image.Resampling.LANCZOS, centering=(0.5, 0.5))
+        out = io.BytesIO()
+        im.save(out, format="JPEG", quality=86, optimize=True, progressive=True)
+        return out.getvalue()
+    except Exception as e:
+        print(f"Gorsel isleme hatasi: {e}")
+        return None
+
+
+def github_kapak_yukle(jpeg_bytes, baslik):
+    """1200x675 kapagi repo'ya kaydeder ve public raw URL dondurur.
+    Repo private ise raw URL Blogger okuyucularina acik olmayabilir.
+    """
+    if not jpeg_bytes or not GITHUB_TOKEN or not GITHUB_REPOSITORY:
+        return None
+    try:
+        now = datetime.now(timezone.utc)
+        digest = hashlib.sha1(jpeg_bytes).hexdigest()[:10]
+        filename = f"{_slugify(baslik)}-{digest}.jpg"
+        path = f"assets/covers/{now:%Y/%m}/{filename}"
+        api_url = f"https://api.github.com/repos/{GITHUB_REPOSITORY}/contents/{path}"
+        headers = {
+            "Authorization": f"Bearer {GITHUB_TOKEN}",
+            "Accept": "application/vnd.github+json",
+            "X-GitHub-Api-Version": "2022-11-28",
+        }
+        payload = {
+            "message": f"Add cover: {filename}",
+            "content": base64.b64encode(jpeg_bytes).decode("ascii"),
+            "branch": GITHUB_BRANCH,
+        }
+        r = requests.put(api_url, headers=headers, json=payload, timeout=30)
+        if r.status_code not in (200, 201):
+            print("Kapak GitHub yukleme hatasi:", r.status_code, r.text[:500])
+            return None
+        owner_repo = GITHUB_REPOSITORY.strip("/")
+        return f"https://raw.githubusercontent.com/{owner_repo}/{GITHUB_BRANCH}/{path}"
+    except Exception as e:
+        print(f"Kapak GitHub yukleme hatasi: {e}")
+        return None
 
 
 def sayfa_gorsel_adaylari(url):
@@ -704,23 +785,37 @@ def rss_gorsel_adaylari(entry):
     return list(dict.fromkeys(adaylar))
 
 
-def en_iyi_gorseli_sec(entry, haber_url, arama_terimi, kategori):
-    """RSS -> OG -> Pexels -> kategori fallback."""
-    for u in rss_gorsel_adaylari(entry):
-        if gorsel_boyutu_kontrol(u):
-            return u, "RSS", None
-
-    for u in sayfa_gorsel_adaylari(haber_url):
-        if gorsel_boyutu_kontrol(u):
-            return u, "Kaynak sayfa", None
+def en_iyi_gorseli_sec(entry, haber_url, arama_terimi, kategori, baslik="haber"):
+    """RSS -> OG -> Pexels -> kategori fallback.
+    Uygun aday bulunursa 1200x675'e donusturup GitHub'da barindirir.
+    Yukleme basarisizsa orijinal URL'ye geri doner.
+    """
+    adaylar = []
+    adaylar.extend((u, "RSS", None) for u in rss_gorsel_adaylari(entry))
+    adaylar.extend((u, "Kaynak sayfa", None) for u in sayfa_gorsel_adaylari(haber_url))
 
     p_url, fotografci = pexels_gorsel_bul(arama_terimi)
-    if p_url and gorsel_boyutu_kontrol(p_url):
-        return p_url, "Pexels", fotografci
+    if p_url:
+        adaylar.append((p_url, "Pexels", fotografci))
 
     fallback = KATEGORI_FALLBACK.get(kategori)
     if fallback:
-        return fallback, "NetDijital kategori kapağı", None
+        adaylar.append((fallback, "NetDijital kategori kapağı", None))
+
+    gorulen = set()
+    for u, kaynak, fotografci in adaylar:
+        if not u or u in gorulen:
+            continue
+        gorulen.add(u)
+        if not gorsel_boyutu_kontrol(u):
+            continue
+        jpeg = gorseli_1200x675_hazirla(u)
+        if jpeg:
+            hosted = github_kapak_yukle(jpeg, baslik)
+            if hosted:
+                return hosted, kaynak + " / 1200x675", fotografci
+        # Hosting basarisizsa siteyi kapaksiz birakma.
+        return u, kaynak, fotografci
 
     return None, None, None
 
@@ -941,6 +1036,7 @@ def main():
         kaynak_url,
         makale.get("gorsel_arama_terimi", "technology"),
         kategori,
+        makale.get("baslik", orijinal_baslik),
     )
 
     icerik = (
