@@ -1,4 +1,4 @@
-# NetDijital v1.3.10 - Kota Optimizasyonu + AI'siz Gorsel Kontrol + Tek Kategori/Yazar
+# NetDijital v1.3.11 - Kota Optimizasyonu + AI'siz Gorsel Kontrol + Tek Kategori/Yazar
 # NetDijital rss_bot.py v1.3.6 - Gorsel alaka kontrolu ve gelismis Pexels aramasi
 import os
 import json
@@ -784,11 +784,34 @@ def github_kapak_yukle(jpeg_bytes, baslik):
             "Accept": "application/vnd.github+json",
             "X-GitHub-Api-Version": "2022-11-28",
         }
+        # GitHub Contents API: ayni path zaten varsa guncelleme icin SHA zorunludur.
+        # Tekrarlanan testlerde ayni baslik + ayni JPEG ayni dosya adini uretebilir.
+        # Once mevcut dosyayi kontrol edip SHA'yi PUT payload'ina ekliyoruz.
+        sha = None
+        mevcut = requests.get(
+            api_url,
+            headers=headers,
+            params={"ref": GITHUB_BRANCH},
+            timeout=20,
+        )
+        if mevcut.status_code == 200:
+            sha = mevcut.json().get("sha")
+            print(f"Kapak GitHub'da zaten mevcut; SHA ile guncellenecek: {path}")
+        elif mevcut.status_code != 404:
+            print(
+                "Kapak GitHub mevcut dosya kontrol hatasi:",
+                mevcut.status_code,
+                mevcut.text[:500],
+            )
+
         payload = {
-            "message": f"Add cover: {filename}",
+            "message": (f"Update cover: {filename}" if sha else f"Add cover: {filename}"),
             "content": base64.b64encode(jpeg_bytes).decode("ascii"),
             "branch": GITHUB_BRANCH,
         }
+        if sha:
+            payload["sha"] = sha
+
         r = requests.put(api_url, headers=headers, json=payload, timeout=30)
         if r.status_code not in (200, 201):
             print("Kapak GitHub yukleme hatasi:", r.status_code, r.text[:500])
