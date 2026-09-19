@@ -623,6 +623,22 @@ def kategori_normalize(kategori):
     return esleme.get(k, "Yapay Zekâ")
 
 
+YAZAR_BY_KATEGORI = {
+    "Yapay Zekâ": "Sıla Elif",
+    "Mobil": "Ömer Cin",
+    "Bilgisayar": "İzzet Sarıkaya",
+    "Oyun": "Güneş Yücel",
+    "Otomotiv": "Murat Üşengeç",
+    "Uzay": "Miraç Demir",
+    "Dizi & Sinema": "Metin Oktay",
+    "Rehberler": "NetDijital",
+}
+
+
+def kategori_yazari(kategori):
+    return YAZAR_BY_KATEGORI.get(kategori_normalize(kategori), "NetDijital")
+
+
 def _gorsel_indir(url):
     """Gorseli indirir ve Pillow Image nesnesi + ham byte dondurur."""
     if not url or not url.startswith(("http://", "https://")):
@@ -924,8 +940,8 @@ KURALLAR:
 7. Spekulasyon, kullanici tepkisi veya sektor etkisi icin veri verilmemisse bunu olgu gibi uydurma.
 8. Ana kategori TAM OLARAK su sekiz degerden biri olmali:
    Yapay Zekâ, Mobil, Bilgisayar, Oyun, Otomotiv, Uzay, Dizi & Sinema, Rehberler
-9. Etiketler ana kategori disinda 2-5 adet olsun. Marka, urun, platform veya spesifik teknoloji adlarini kullan.
-10. "Teknoloji", "Teknoloji Haberleri", "Guncel Teknoloji", "Gundem", kaynak site adi gibi genel etiketler uretme.
+9. Blogger etiketi olarak SADECE ana kategori kullanilacak. Ek etiket/TAG uretme.
+10. Marka, urun, platform, kaynak site adi veya genel teknoloji terimlerini etiket olarak uretme.
 11. Gorsel arama terimi 3-7 kelimelik, somut ve Ingilizce olsun. Urun/marka/model haberinde marka + model + nesne turunu mutlaka icersin. technology, AI, innovation gibi tek basina genel stok terimleri kullanma.
 12. Meta aciklamasi yaklasik 140-160 karakter olsun.
 13. Sadece gecerli JSON dondur.
@@ -936,7 +952,6 @@ JSON:
   "icerik_html": "<p>...</p><h2>...</h2><p>...</p>",
   "meta_aciklama": "...",
   "kategori": "Yapay Zekâ",
-  "etiketler": ["Gemini", "Google"],
   "gorsel_arama_terimi": "Google Gemini AI interface"
 }}
 """
@@ -967,17 +982,12 @@ JSON:
                         satirlar = satirlar[:-1]
                     metin = "\n".join(satirlar).strip()
                 data = json.loads(metin)
-                for alan in ("baslik", "icerik_html", "kategori", "etiketler", "gorsel_arama_terimi"):
+                for alan in ("baslik", "icerik_html", "kategori", "gorsel_arama_terimi"):
                     if alan not in data:
                         raise ValueError(f"Eksik JSON alani: {alan}")
                 data["kategori"] = kategori_normalize(data.get("kategori"))
-                temiz = []
-                yasak = {"teknoloji", "teknoloji haberleri", "güncel teknoloji", "guncel teknoloji", "gündem", "gundem", "dijital dünya", "dijital dunya"}
-                for e in data.get("etiketler", []):
-                    e = str(e).strip()
-                    if e and e.lower() not in yasak and e.lower() != data["kategori"].lower() and e not in temiz:
-                        temiz.append(e)
-                data["etiketler"] = temiz[:5]
+                # NetDijital kurali: Blogger tarafinda tam olarak 1 etiket = ana kategori.
+                data["etiketler"] = [data["kategori"]]
                 print(f"Gemini basarili: {model}")
                 return data, True
             except Exception as e:
@@ -1265,8 +1275,10 @@ def main():
         return
 
     kategori = kategori_normalize(makale.get("kategori"))
-    etiketler = [kategori] + [e for e in makale.get("etiketler", []) if e != kategori]
-    etiketler = etiketler[:6]  # 1 ana kategori + en fazla 5 kontrollu etiket
+    yazar = kategori_yazari(kategori)
+    # NetDijital kurali: 1 haber = 1 Blogger etiketi = ana kategori.
+    # Marka/urun/platform adlari artik Blogger TAG olarak gonderilmez.
+    etiketler = [kategori]
 
     gorsel_url, gorsel_kaynagi, fotografci = en_iyi_gorseli_sec(
         secilen,
@@ -1288,6 +1300,7 @@ def main():
         print("Blogger API: DEVRE DISI (OAuth/token ve posts.insert cagrilmaz)")
         print(f"Baslik        : {makale.get('baslik', orijinal_baslik)}")
         print(f"Ana kategori  : {kategori}")
+        print(f"Kategori yazari: {yazar}")
         print(f"Etiketler     : {', '.join(etiketler)}")
         print(f"Gorsel kaynagi: {gorsel_kaynagi or 'yok'}")
         print(f"Kapak URL     : {gorsel_url or 'yok'}")
