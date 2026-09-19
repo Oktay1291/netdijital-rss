@@ -45,6 +45,13 @@ MAX_GECMIS_LINK = 3000
 # True = Blogger'da taslak oluştur
 TASLAK_OLARAK_KAYDET = False
 
+# ============================================================
+# GUVENLI TEST MODU
+# ============================================================
+# Varsayilan TRUE'dur. Bu modda Blogger OAuth/token ve posts.insert
+# dahil HICBIR Blogger API cagrisi yapilmaz.
+TEST_MODU = os.getenv("TEST_MODU", "true").strip().lower() in {"1", "true", "yes", "on"}
+
 
 # ============================================================
 # GEMINI
@@ -985,13 +992,16 @@ def blogger_yayinla(access_token, baslik, icerik, etiketler, taslak=False):
 
 
 def gerekli_ayarlar_tamam():
-    gerekli = {
-        "BLOGGER_CLIENT_ID": CLIENT_ID,
-        "BLOGGER_CLIENT_SECRET": CLIENT_SECRET,
-        "BLOGGER_REFRESH_TOKEN": REFRESH_TOKEN,
-        "BLOGGER_BLOG_ID": BLOGGER_BLOG_ID,
-        "GEMINI_API_KEY": GEMINI_API_KEY,
-    }
+    # Test modunda Blogger kimlik bilgilerine ihtiyac yoktur ve
+    # Blogger'a hicbir baglanti kurulmaz.
+    gerekli = {"GEMINI_API_KEY": GEMINI_API_KEY}
+    if not TEST_MODU:
+        gerekli.update({
+            "BLOGGER_CLIENT_ID": CLIENT_ID,
+            "BLOGGER_CLIENT_SECRET": CLIENT_SECRET,
+            "BLOGGER_REFRESH_TOKEN": REFRESH_TOKEN,
+            "BLOGGER_BLOG_ID": BLOGGER_BLOG_ID,
+        })
     eksik = [k for k, v in gerekli.items() if not v]
     if eksik:
         print("Eksik ortam degiskenleri:", ", ".join(eksik))
@@ -1063,6 +1073,23 @@ def main():
         + makale.get("icerik_html", "")
         + kaynak_html(secilen_kaynak["kaynak"], kaynak_url)
     )
+
+    if TEST_MODU:
+        print("\n" + "=" * 64)
+        print("[NETDIJITAL GUVENLI TEST MODU]")
+        print("Blogger API: DEVRE DISI (OAuth/token ve posts.insert cagrilmaz)")
+        print(f"Baslik        : {makale.get('baslik', orijinal_baslik)}")
+        print(f"Ana kategori  : {kategori}")
+        print(f"Etiketler     : {', '.join(etiketler)}")
+        print(f"Gorsel kaynagi: {gorsel_kaynagi or 'yok'}")
+        print(f"Kapak URL     : {gorsel_url or 'yok'}")
+        print(f"Kapak hedefi  : 1200x675")
+        print(f"Kaynak        : {secilen_kaynak['kaynak']} - {kaynak_url}")
+        print(f"HTML uzunlugu : {len(icerik)} karakter")
+        print("SONUC          : BLOGGER YAYINI ATLANDI")
+        print("=" * 64)
+        # Testte history guncellenmez; ayni haber tekrar test edilebilir.
+        return
 
     token = get_access_token(CLIENT_ID, CLIENT_SECRET, REFRESH_TOKEN)
     if not token:
