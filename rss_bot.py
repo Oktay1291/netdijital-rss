@@ -1,4 +1,4 @@
-# NetDijital v1.3.12 - Tam Genislik 16:9 Kapak + v1.3.11 Guvenli Sistem
+# NetDijital v1.3.14 - Duz Yazi Kaynak Adi + v1.3.13 Sistem
 # NetDijital rss_bot.py v1.3.6 - Gorsel alaka kontrolu ve gelismis Pexels aramasi
 import os
 import json
@@ -1233,8 +1233,9 @@ def cta_html(kategori=None):
 
 
 def kaynak_html(kaynak_adi, kaynak_url=None):
-    """Haber sonunda yalnizca kaynak adini gosterir; URL gorunmez ve tiklanamaz."""
-    # kaynak_url botun haber secimi/dogrulamasi icin tutulur; makale HTML'ine eklenmez.
+    """Haber sonunda yalnizca kaynak adini duz yazi olarak gosterir."""
+    # URL botun dahili haber secimi/dogrulamasi icin tutulur.
+    # Makale HTML'inde URL yazilmaz ve kaynak adi tiklanabilir yapilmaz.
     ad = html.escape(kaynak_adi or "Orijinal kaynak")
     return (
         '<div class="netdijital-sources" style="margin:26px 0 20px;padding-top:18px;'
