@@ -1,4 +1,4 @@
-# NetDijital v1.3.14 - Duz Yazi Kaynak Adi + v1.3.13 Sistem
+# NetDijital v1.3.15 - Haber Ici Gorsel Standardi + v1.3.14 Sistem
 # NetDijital rss_bot.py v1.3.6 - Gorsel alaka kontrolu ve gelismis Pexels aramasi
 import os
 import json
@@ -1231,6 +1231,54 @@ def cta_html(kategori=None):
         '</div>'
     )
 
+
+
+def haber_ici_gorselleri_duzenle(html_icerik):
+    """Ara gorselleri responsive yapar; kucuk/video thumbnail gorselleri temizler."""
+    if not html_icerik:
+        return html_icerik
+
+    soup = BeautifulSoup(html_icerik, "html.parser")
+    video_ipuclari = (
+        "youtube", "youtu.be", "vimeo", "video", "player",
+        "hqdefault", "mqdefault", "sddefault"
+    )
+
+    def px_degeri(v):
+        if v is None:
+            return None
+        m = re.search(r"\\d+", str(v))
+        return int(m.group()) if m else None
+
+    for img in list(soup.find_all("img")):
+        src = (img.get("src") or img.get("data-src") or "").strip()
+        alt = (img.get("alt") or "").strip().lower()
+        cls = " ".join(img.get("class") or []).lower()
+        baglam = f"{src} {alt} {cls}".lower()
+
+        if any(ipucu in baglam for ipucu in video_ipuclari):
+            img.decompose()
+            continue
+
+        w = px_degeri(img.get("width"))
+        h = px_degeri(img.get("height"))
+        if (w is not None and w < 300) or (h is not None and h < 180):
+            img.decompose()
+            continue
+
+        if not img.get("src") and img.get("data-src"):
+            img["src"] = img.get("data-src")
+
+        img.attrs.pop("width", None)
+        img.attrs.pop("height", None)
+        img["style"] = (
+            "display:block;width:100%;max-width:900px;height:auto;"
+            "margin:24px auto;object-fit:contain;"
+        )
+        img["loading"] = "lazy"
+        img["decoding"] = "async"
+
+    return str(soup)
 
 def kaynak_html(kaynak_adi, kaynak_url=None):
     """Haber sonunda yalnizca kaynak adini duz yazi olarak gosterir."""
