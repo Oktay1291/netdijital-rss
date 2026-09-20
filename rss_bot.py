@@ -1,4 +1,4 @@
-# NetDijital v1.3.11 - Kota Optimizasyonu + AI'siz Gorsel Kontrol + Tek Kategori/Yazar
+# NetDijital v1.3.12 - Tam Genislik 16:9 Kapak + v1.3.11 Guvenli Sistem
 # NetDijital rss_bot.py v1.3.6 - Gorsel alaka kontrolu ve gelismis Pexels aramasi
 import os
 import json
@@ -1182,20 +1182,36 @@ def entry_ozet(entry):
 
 
 def kapak_html(gorsel_url, baslik, gorsel_kaynagi=None, fotografci=None):
+    """Ana kapagi Blogger icerik kolonunda responsive ve tam genislikte gosterir.
+
+    Kaynak dosya 1200x675 olarak korunur. Sabit piksel genisligi verilmez;
+    boylece tema masaustunde kapagi gereksiz yere 400-500 px'e sikistiramaz,
+    mobilde ise gorsel tasma yapmaz.
+    """
     if not gorsel_url:
         return ""
+
     alt = html.escape(baslik, quote=True)
     url = html.escape(gorsel_url, quote=True)
     kredi = ""
+
     if gorsel_kaynagi == "Pexels" and fotografci:
-        kredi = f'<p style="font-size:12px;color:#777;margin:6px 0 18px">Görsel: Pexels / {html.escape(str(fotografci))}</p>'
+        kredi = (
+            '<p style="font-size:12px;color:#777;margin:6px 0 18px">'
+            f'Görsel: Pexels / {html.escape(str(fotografci))}</p>'
+        )
+
     return (
-        '<div class="netdijital-cover" style="width:100%;aspect-ratio:16/9;overflow:hidden;'
-        'border-radius:8px;margin:0 0 18px">'
-        f'<img src="{url}" alt="{alt}" loading="eager" style="width:100%;height:100%;object-fit:cover;object-position:center;display:block" />'
+        '<div class="netdijital-cover" '
+        'style="display:block;width:100%;max-width:none;margin:0 0 22px;'
+        'padding:0;overflow:hidden;border-radius:8px;line-height:0">'
+        f'<img src="{url}" alt="{alt}" loading="eager" fetchpriority="high" '
+        'width="1200" height="675" '
+        'style="display:block;width:100% !important;max-width:100% !important;'
+        'height:auto !important;aspect-ratio:16/9;object-fit:cover;'
+        'object-position:center;margin:0 !important;padding:0 !important" />'
         '</div>' + kredi
     )
-
 
 def cta_html(kategori=None):
     """Her haberin sonunda gosterilen standart NetDijital takip kutusu."""
