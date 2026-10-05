@@ -888,25 +888,39 @@ def main():
         print("Yeni haber bulunamadi.")
         return
 
-    kaynak_url = normalize_url(secilen.get("link"))
+        kaynak_url = normalize_url(secilen.get("link"))
     orijinal_baslik = html.unescape((secilen.get("title") or "").strip())
     ozet = entry_ozet(secilen)
 
-print(f"Secilen haber: {orijinal_baslik} [{secilen_kaynak['kaynak']}]")
+    print(f"Secilen haber: {orijinal_baslik} [{secilen_kaynak['kaynak']}]")
 
-# Once kaynak sayfadaki tam haber metnini cekmeye calis.
-tam_metin = haber_tam_metni_cek(kaynak_url)
+    # Once kaynak sayfadaki tam haber metnini cekmeye calis.
+    tam_metin = haber_tam_metni_cek(kaynak_url)
 
-if tam_metin:
-    kaynak_metin = tam_metin
-    print("Gemini kaynak metni: TAM HABER METNI")
-else:
-    kaynak_metin = ozet
-    print("Gemini kaynak metni: RSS OZETI (fallback)")
+    if tam_metin:
+        kaynak_metin = tam_metin
+        print("Gemini kaynak metni: TAM HABER METNI")
+    else:
+        kaynak_metin = ozet
+        print("Gemini kaynak metni: RSS OZETI (fallback)")
 
-makale, ok = llm_ile_makale_uret(orijinal_baslik, kaynak_metin)
+    makale, ok = llm_ile_makale_uret(
+        orijinal_baslik,
+        kaynak_metin
+    )
+
     if not ok or not makale:
         print("Makale uretilemedi; yayin yapilmadi.")
+        return
+
+    makale, kalite_ok, kalite_sorunlari = makale_kalite_kontrol(
+        makale,
+        orijinal_baslik,
+        kaynak_metin
+    )
+
+    if not kalite_ok:
+        print("AI kalite kontrolu tamamlanamadi; guvenlik geregi yayin yapilmadi.")
         return
 
     makale, kalite_ok, kalite_sorunlari = makale_kalite_kontrol(
