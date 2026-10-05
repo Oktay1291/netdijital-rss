@@ -635,6 +635,119 @@ JSON:
 # ============================================================
 
 def entry_ozet(entry):
+    def haber_tam_metni_cek(url):
+    """
+    Haber sayfasindaki asil metni cekmeye calisir.
+    Basarisiz veya yetersiz olursa None dondurur.
+    """
+    if not url:
+        return None
+
+    headers = {
+        "User-Agent": (
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+            "AppleWebKit/537.36 (KHTML, like Gecko) "
+            "Chrome/153.0 Safari/537.36"
+        ),
+        "Accept-Language": "tr-TR,tr;q=0.9,en-US;q=0.8,en;q=0.7",
+    }
+
+    try:
+        response = requests.get(url, headers=headers, timeout=20)
+        response.raise_for_status()
+
+        soup = BeautifulSoup(response.text, "html.parser")
+
+        # Icerikle ilgisi olmayan bolumleri temizle.
+        for etiket in soup([
+            "script", "style", "noscript", "iframe",
+            "nav", "footer", "header", "form",
+            "aside", "button", "svg"
+        ]):
+            etiket.decompose()
+
+        # Once standart <article> etiketini dene.
+        aday = soup.find("article")
+
+        # Article yoksa yaygin haber govdesi siniflarini dene.
+        if not aday:
+            seciciler = [
+                '[itemprop="articleBody"]',
+                ".article-content",
+                ".article-body",
+                ".post-content",
+                ".post-body",
+                ".entry-content",
+                ".news-content",
+                ".news-detail",
+                ".content-detail",
+                ".story-body",
+            ]
+
+            for secici in seciciler:
+                aday = soup.select_one(secici)
+                if aday:
+                    break
+
+        if not aday:
+            print("Tam metin: haber govdesi bulunamadi.")
+            return None
+
+        # Haber govdesi icindeki paragraflari al.
+        paragraflar = []
+
+        for p in aday.find_all("p"):
+            metin = " ".join(p.stripped_strings)
+            metin = html.unescape(metin)
+            metin = re.sub(r"\s+", " ", metin).strip()
+
+            # Cok kisa / anlamsiz paragraflari alma.
+            if len(metin) < 40:
+                continue
+
+            paragraflar.append(metin)
+
+        # Tekrarlanan paragraflari temizle.
+        temiz = []
+        gorulen = set()
+
+        for paragraf in paragraflar:
+            anahtar = paragraf.lower()
+
+            if anahtar in gorulen:
+                continue
+
+            gorulen.add(anahtar)
+            temiz.append(paragraf)
+
+        tam_metin = "\n\n".join(temiz).strip()
+
+        # Cok az metin geldiyse guvenme.
+        if len(tam_metin) < 500:
+            print(
+                f"Tam metin yetersiz: {len(tam_metin)} karakter. "
+                "RSS ozetine geri donulecek."
+            )
+            return None
+
+        # Gemini'ye kontrolsuz devasa sayfa gondermeyelim.
+        tam_metin = tam_metin[:30000]
+
+        print(
+            f"Tam haber metni cekildi: "
+            f"{len(tam_metin)} karakter | "
+            f"{len(tam_metin.split())} kelime"
+        )
+
+        return tam_metin
+
+    except requests.exceptions.RequestException as e:
+        print(f"Tam metin HTTP hatasi: {e}")
+        return None
+
+    except Exception as e:
+        print(f"Tam metin cekme hatasi: {e}")
+        return None
     ham = entry.get("summary") or entry.get("description") or ""
     if not ham and entry.get("content"):
         try:
