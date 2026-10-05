@@ -635,9 +635,22 @@ JSON:
 # ============================================================
 
 def entry_ozet(entry):
-    def haber_tam_metni_cek(url):
+    ham = entry.get("summary") or entry.get("description") or ""
+    if not ham and entry.get("content"):
+        try:
+            ham = entry.content[0].value
+        except Exception:
+            ham = ""
+    soup = BeautifulSoup(ham, "html.parser")
+    metin = " ".join(soup.stripped_strings)
+    return html.unescape(metin)[:12000]
+
+
+def haber_tam_metni_cek(url):
     """
     Haber sayfasindaki asil metni cekmeye calisir.
+    Basarisiz veya yetersiz olursa None dondurur.
+    """
     Basarisiz veya yetersiz olursa None dondurur.
     """
     if not url:
