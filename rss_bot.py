@@ -1,15 +1,17 @@
-# NetDijital v2.0 - Saatlik Otomatik Haber + Ucretsiz AI Gorsel Uretimi
-# Degisiklikler (v1.3.15 -> v2.0):
-#   - Pexels stok fotograf aramasi kaldirildi; her haber icin Pollinations.ai
-#     ile UCRETSIZ, anahtarsiz, 16:9 (1200x675) ozgun AI kapak gorseli uretiliyor.
-#   - Kelime hedefi 800-1200 olarak guncellendi.
-#   - RSS_SOURCES'a birinci elden buyuk teknoloji sirketi (Apple/Google/Samsung/
-#     Microsoft) resmi duyuru feed'leri eklendi.
-#   - YAYIN_SIKLIGI_DK ile calisma sikligini (varsayilan: saatte bir) tek yerden
-#     kontrol edebilirsin; GitHub Actions cron ayari da bununla uyumlu olmali.
-# Duzeltmeler:
-#   - main() icinde kaynak_url satirinin girintisi duzeltildi (UnboundLocalError).
-#   - Cift calisan makale_kalite_kontrol cagrisi tek cagriya indirildi.
+# NetDijital v2.1 - Saatlik Otomatik Haber + Ucretsiz AI Gorsel Uretimi
+# v2.0 degisiklikleri:
+#   - Pexels kaldirildi; her haber icin Pollinations.ai ile ucretsiz 16:9 AI kapak.
+#   - Kelime hedefi 800-1200.
+#   - Resmi sirket RSS feed'leri (Google/Microsoft/Samsung/Apple) eklendi.
+# v2.1 degisiklikleri:
+#   - KISA HABER ATLAMA: kaynak metin ya da uretilen haber esigin altindaysa
+#     haber atlanir, linki gecmise eklenir ve siradaki habere gecilir.
+#   - GELISMIS TAM METIN: once RSS'teki content:encoded (tam icerik) kullanilir;
+#     yetersizse haber sayfasi daha akilli bir yontemle okunur
+#     (cok sayida secici, en uzun govde secimi, JSON-LD articleBody, tablo/liste).
+#   - Gecmis listesi artik sirayi koruyor (eski surumde set kullanildigi icin
+#     3000 limiti asildiginda rastgele linkler siliniyordu).
+#   - main() girinti hatasi ve cift kalite kontrol cagrisi duzeltildi.
 import os
 import json
 import random
@@ -21,65 +23,71 @@ import re
 import io
 import hashlib
 import unicodedata
+from copy import copy
 from datetime import datetime, timezone
 from urllib.parse import urljoin, quote
- 
+
 import requests
 import feedparser
- 
+
 from bs4 import BeautifulSoup
 from google import genai
 from google.genai import types
 from PIL import Image, ImageOps
- 
- 
+
+
 # ============================================================
 # AYARLAR
 # ============================================================
- 
+
 CLIENT_ID = os.getenv("BLOGGER_CLIENT_ID")
 CLIENT_SECRET = os.getenv("BLOGGER_CLIENT_SECRET")
 REFRESH_TOKEN = os.getenv("BLOGGER_REFRESH_TOKEN")
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
 BLOGGER_BLOG_ID = os.getenv("BLOGGER_BLOG_ID")
- 
+
 GITHUB_TOKEN = os.getenv("GITHUB_TOKEN")
 GITHUB_REPOSITORY = os.getenv("GITHUB_REPOSITORY")
 GITHUB_BRANCH = os.getenv("GITHUB_REF_NAME", "main")
- 
+
 HISTORY_FILE = "posted_history.json"
 MAX_GECMIS_LINK = 3000
- 
+
 # False = direkt yayınla / True = Blogger'da taslak oluştur
 TASLAK_OLARAK_KAYDET = False
- 
-# Bilgi amacli: bu betik tek calismada TEK haber uretir. Saatte bir mi,
-# 3 saatte bir mi calisacagini GitHub Actions workflow'undaki cron belirler
-# (bkz. .github/workflows/saatlik-haber.yml). Icerik kalitesi ve AdSense
-# acisindan 24 haber/gun yerine daha seyrek (orn. 6-8 haber/gun) baslamak
-# daha guvenli bir secimdir; workflow dosyasindaki cron satirini degistirerek
-# bunu istedigin an ayarlayabilirsin, kod tarafinda bir sey degismez.
- 
+
+# --- Kisa haber esikleri (kelime) ---
+# Kaynak metin bu sayinin altindaysa Gemini'ye hic gonderilmez (kota tasarrufu).
+MIN_KAYNAK_KELIME = int(os.getenv("MIN_KAYNAK_KELIME", "250"))
+# Uretilen (ve kalite kontrolunden gecen) haber bu sayinin altindaysa yayinlanmaz.
+MIN_HABER_KELIME = int(os.getenv("MIN_HABER_KELIME", "400"))
+# Tek calismada en fazla kac farkli haber denenecek (her biri Gemini kotasi harcar).
+MAX_ADAY_DENEMESI = int(os.getenv("MAX_ADAY_DENEMESI", "5"))
+# RSS'teki tam icerik bu karakter sayisindan uzunsa haber sayfasi hic cekilmez.
+RSS_TAM_ICERIK_YETERLI = 2500
+
+# Bilgi amacli: bu betik tek calismada TEK haber yayinlar. Saatte bir mi,
+# 3 saatte bir mi calisacagini GitHub Actions workflow'undaki cron belirler.
+
 # ============================================================
 # GUVENLI TEST MODU
 # ============================================================
 TEST_MODU = os.getenv("TEST_MODU", "true").strip().lower() in {"1", "true", "yes", "on"}
- 
- 
+
+
 # ============================================================
 # GEMINI
 # ============================================================
- 
+
 client = genai.Client(api_key=GEMINI_API_KEY) if GEMINI_API_KEY else None
- 
- 
+
+
 # ============================================================
 # RSS KAYNAKLARI
 # ============================================================
 # Not: Hepsi herkese acik, ucretsiz RSS feed'leridir. Google aramasi veya
-# Google Haberler kazima (scraping) YAPILMAZ; bu yuzden Google tarafindan
-# bot/erisim kisitlamasina takilma riski yoktur.
- 
+# Google Haberler kazima (scraping) YAPILMAZ.
+
 RSS_SOURCES = [
     # --- Turk teknoloji siteleri ---
     {"kaynak": "CHIP Online", "url": "https://www.chip.com.tr/rss"},
@@ -91,23 +99,20 @@ RSS_SOURCES = [
     {"kaynak": "Teknolojioku", "url": "https://www.teknolojioku.com/rss"},
     {"kaynak": "Techolay", "url": "https://techolay.net/feed/"},
     {"kaynak": "Teknoblog", "url": "https://www.teknoblog.com/feed/"},
- 
+
     # --- Birinci elden buyuk teknoloji sirketi duyurulari (resmi RSS) ---
-    # Bu kaynaklar sirketlerin kendi resmi haber/blog feed'leridir; "ikinci
-    # elden" bir teknoloji sitesinin yorumu degil, dogrudan sirket aciklamasidir.
     {"kaynak": "Google Blog", "url": "https://blog.google/rss/"},
     {"kaynak": "Microsoft News", "url": "https://news.microsoft.com/feed/"},
     {"kaynak": "Samsung Newsroom", "url": "https://news.samsung.com/global/feed"},
-    # Apple resmi bir genel RSS yayinlamadiginda bu kaynak otomatik atlanir
-    # (fetch_feed hata verirse bos donup bir sonraki kaynaga gecilir).
+    # Apple resmi bir genel RSS yayinlamadiginda bu kaynak otomatik atlanir.
     {"kaynak": "Apple Newsroom", "url": "https://www.apple.com/newsroom/rss-feed.rss"},
 ]
- 
- 
+
+
 # ============================================================
 # GOOGLE ACCESS TOKEN
 # ============================================================
- 
+
 def get_access_token(client_id, client_secret, refresh_token):
     token_url = "https://oauth2.googleapis.com/token"
     payload = {
@@ -125,12 +130,12 @@ def get_access_token(client_id, client_secret, refresh_token):
         return r.json().get("access_token")
     print(f"Token yenileme hatasi: {r.status_code} - {r.text}")
     return None
- 
- 
+
+
 # ============================================================
 # HISTORY
 # ============================================================
- 
+
 def load_history():
     default_data = {
         "yayinlanan_linkler": [],
@@ -149,14 +154,14 @@ def load_history():
     except Exception as e:
         print(f"History okunamadi: {e}")
         return default_data
- 
- 
+
+
 def save_history(data):
     data["yayinlanan_linkler"] = data["yayinlanan_linkler"][-MAX_GECMIS_LINK:]
     with open(HISTORY_FILE, "w", encoding="utf-8") as f:
         json.dump(data, f, ensure_ascii=False, indent=2)
- 
- 
+
+
 def github_history_save():
     if not GITHUB_TOKEN or not GITHUB_REPOSITORY or not os.path.exists(HISTORY_FILE):
         return False
@@ -182,12 +187,19 @@ def github_history_save():
     except Exception as e:
         print(f"GitHub history hatasi: {e}")
     return False
- 
- 
+
+
+def gecmisi_kaydet(history, linkler):
+    """Link listesini (sirasi korunmus) history'ye yazar, diske ve GitHub'a kaydeder."""
+    history["yayinlanan_linkler"] = linkler
+    save_history(history)
+    github_history_save()
+
+
 # ============================================================
 # RSS
 # ============================================================
- 
+
 def fetch_feed(url, kaynak_adi="Kaynak"):
     headers = {
         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
@@ -201,20 +213,19 @@ def fetch_feed(url, kaynak_adi="Kaynak"):
     except Exception as e:
         print(f"Feed alinamadi [{kaynak_adi}]: {e}")
         return feedparser.parse("")
- 
- 
+
+
 def normalize_url(url):
     if not url:
         return None
     return url.strip()
- 
- 
+
+
 # ============================================================
-# WEB SAYFASINDAN OG IMAGE (yalnizca haber dogrulama/baglam icin; kapak
-# gorseli artik AI ile uretildigi icin bu fonksiyon yayinlanan gorseli
-# belirlemez, yalnizca gelecekte ihtiyac olursa diye korunur)
+# WEB SAYFASINDAN OG IMAGE (kapak gorseli artik AI ile uretildigi icin
+# bu fonksiyon kullanilmiyor; ileride lazim olursa diye korunuyor)
 # ============================================================
- 
+
 def sayfa_gorseli_bul(url):
     if not url:
         return None
@@ -232,23 +243,23 @@ def sayfa_gorseli_bul(url):
     except Exception as e:
         print(f"Web gorsel hatasi: {e}")
     return None
- 
- 
+
+
 # ============================================================
 # NETDIJITAL KATEGORI SISTEMI
 # ============================================================
- 
+
 ANA_KATEGORILER = [
     "Yapay Zekâ", "Mobil", "Bilgisayar", "Oyun",
     "Otomotiv", "Uzay", "Dizi & Sinema", "Rehberler"
 ]
- 
+
 FALLBACK_REPOSITORY = GITHUB_REPOSITORY or "Oktay1291/netdijital-rss"
 FALLBACK_BRANCH = GITHUB_BRANCH or "main"
 FALLBACK_BASE_URL = (
     f"https://raw.githubusercontent.com/{FALLBACK_REPOSITORY}/{FALLBACK_BRANCH}/assets/fallback"
 )
- 
+
 KATEGORI_FALLBACK = {
     "Yapay Zekâ": f"{FALLBACK_BASE_URL}/netdijital-fallback-yapay-zeka-1200x675.jpg",
     "Mobil": f"{FALLBACK_BASE_URL}/netdijital-fallback-mobil-1200x675.jpg",
@@ -259,8 +270,8 @@ KATEGORI_FALLBACK = {
     "Dizi & Sinema": f"{FALLBACK_BASE_URL}/netdijital-fallback-dizi-sinema-1200x675.jpg",
     "Rehberler": f"{FALLBACK_BASE_URL}/netdijital-fallback-rehberler-1200x675.jpg",
 }
- 
- 
+
+
 def kategori_normalize(kategori):
     if not kategori:
         return "Yapay Zekâ"
@@ -276,8 +287,8 @@ def kategori_normalize(kategori):
         "rehberler": "Rehberler", "rehber": "Rehberler", "inceleme": "Rehberler",
     }
     return esleme.get(k, "Yapay Zekâ")
- 
- 
+
+
 YAZAR_BY_KATEGORI = {
     "Yapay Zekâ": "Sıla Elif",
     "Mobil": "Ömer Aylaz",
@@ -288,23 +299,19 @@ YAZAR_BY_KATEGORI = {
     "Dizi & Sinema": "Metin Oktay",
     "Rehberler": "Ege Özdemir",
 }
- 
- 
+
+
 def kategori_yazari(kategori):
     return YAZAR_BY_KATEGORI.get(kategori_normalize(kategori), "NetDijital")
- 
- 
+
+
 # ============================================================
 # UCRETSIZ AI GORSEL URETIMI (Pollinations.ai - anahtarsiz, ucretsiz)
 # ============================================================
-# Pollinations.ai herkese acik, API anahtari gerektirmeyen ucretsiz bir
-# gorsel uretim servisidir. Istek basina bir Flux modeliyle gorsel uretir.
-# Ticari/resmi bir SLA sunmaz; bu yuzden basarisiz olursa kategori fallback
-# kapagina (KATEGORI_FALLBACK) guvenli sekilde dusulur.
- 
+
 POLLINATIONS_BASE = "https://image.pollinations.ai/prompt/"
- 
- 
+
+
 def _ai_prompt_hazirla(gorsel_prompt_en, kategori):
     """Marka logosu/tanınabilir gercek kisi gibi riskli ogeleri azaltan,
     16:9 editoryal foto tarzi bir prompt üretir."""
@@ -314,8 +321,8 @@ def _ai_prompt_hazirla(gorsel_prompt_en, kategori):
         "16:9 wide shot, soft studio lighting, no text, no watermark, no logo"
     )
     return f"{temel}, {stil}"
- 
- 
+
+
 def ai_gorsel_uret(gorsel_prompt_en, kategori=None, deneme=2):
     """Pollinations.ai ile 1200x675 (16:9) AI gorsel uretir ve ham JPEG bayt
     olarak dondurur. Basarisiz olursa None doner."""
@@ -352,16 +359,16 @@ def ai_gorsel_uret(gorsel_prompt_en, kategori=None, deneme=2):
             print(f"AI gorsel uretim hatasi (deneme {i}): {e}")
             time.sleep(2)
     return None
- 
- 
+
+
 def _slugify(text):
     text = unicodedata.normalize("NFKD", str(text or ""))
     text = "".join(c for c in text if not unicodedata.combining(c))
     text = text.encode("ascii", "ignore").decode("ascii").lower()
     text = re.sub(r"[^a-z0-9]+", "-", text).strip("-")
     return (text[:70] or "haber")
- 
- 
+
+
 def github_kapak_yukle(jpeg_bytes, baslik):
     """Uretilen 1200x675 kapagi repo'ya kaydeder ve public raw URL dondurur."""
     if not jpeg_bytes or not GITHUB_TOKEN or not GITHUB_REPOSITORY:
@@ -397,8 +404,8 @@ def github_kapak_yukle(jpeg_bytes, baslik):
     except Exception as e:
         print(f"Kapak GitHub yukleme hatasi: {e}")
         return None
- 
- 
+
+
 def kapak_gorseli_hazirla(gorsel_prompt_en, kategori, baslik):
     """Kapak gorseli secim sirasi: AI uretimi -> kategori fallback kapagi."""
     jpeg = ai_gorsel_uret(gorsel_prompt_en, kategori)
@@ -407,35 +414,35 @@ def kapak_gorseli_hazirla(gorsel_prompt_en, kategori, baslik):
         if hosted:
             return hosted, "NetDijital AI Görsel"
         print("AI gorsel GitHub'a yuklenemedi; kategori fallback kapagina duseluyor.")
- 
+
     fallback = KATEGORI_FALLBACK.get(kategori)
     if fallback:
         print(f"Kategori fallback kapagi kullaniliyor: {kategori}")
         return fallback, "NetDijital kategori kapağı"
- 
+
     print(f"Fallback bulunamadi: {kategori}")
     return None, None
- 
- 
+
+
 # ============================================================
 # GEMINI HABER URETIMI
 # ============================================================
- 
+
 def llm_ile_makale_uret(orijinal_baslik, orijinal_ozet):
     if not client:
         print("GEMINI_API_KEY tanimli degil.")
         return None, False
- 
+
     prompt = f"""
 Sen NetDijital icin calisan deneyimli bir Turkce teknoloji editorusun.
 Asagidaki RSS bilgisini temel alarak ozgun, dogal ve olgusal bir teknoloji haberi yaz.
- 
+
 ORIJINAL BASLIK:
 {orijinal_baslik}
- 
+
 ORIJINAL OZET:
 {orijinal_ozet}
- 
+
 KURALLAR:
 1. Yalnizca verilen bilgilerden desteklenebilen olgulari kesin ifade et; eksik bilgiyi uydurma.
 2. Kaynak metni cumle cumle yeniden yazma veya uzun ifadeleri kopyalama.
@@ -456,7 +463,7 @@ KURALLAR:
     bunun yerine konuyu temsil eden genel/kavramsal bir sahne tarif et.
 12. Meta aciklamasi yaklasik 140-160 karakter olsun.
 13. Sadece gecerli JSON dondur.
- 
+
 JSON:
 {{
   "baslik": "...",
@@ -466,12 +473,12 @@ JSON:
   "gorsel_prompt": "a sleek black smartphone on a wooden desk with soft blue light reflections"
 }}
 """
- 
+
     modeller = ["gemini-3.6-flash", "gemini-3.5-flash-lite"]
     gecici_isaretler = ("408", "500", "502", "503", "504", "UNAVAILABLE", "DEADLINE_EXCEEDED")
     kota_isaretleri = ("429", "RESOURCE_EXHAUSTED", "quota", "Quota")
     max_deneme = 2
- 
+
     for model in modeller:
         print(f"Gemini modeli deneniyor: {model}")
         for deneme in range(1, max_deneme + 1):
@@ -496,12 +503,12 @@ JSON:
                         raise ValueError(f"Eksik JSON alani: {alan}")
                 data["kategori"] = kategori_normalize(data.get("kategori"))
                 data["etiketler"] = [data["kategori"]]
- 
-                kelime_sayisi = len(BeautifulSoup(data["icerik_html"], "html.parser").get_text().split())
+
+                kelime_sayisi = haber_kelime_sayisi(data["icerik_html"])
                 print(f"Uretilen icerik kelime sayisi: {kelime_sayisi}")
                 if not (700 <= kelime_sayisi <= 1300):
                     print("UYARI: kelime sayisi hedeflenen 800-1200 araligindan belirgin sapiyor.")
- 
+
                 print(f"Gemini basarili: {model}")
                 return data, True
             except Exception as e:
@@ -522,35 +529,35 @@ JSON:
                 else:
                     print(f"{model} gecici hata nedeniyle kullanilamadi; fallback modele geciliyor.")
     return None, False
- 
- 
+
+
 # ============================================================
 # AI ICERIK KALITE KONTROLU
 # ============================================================
- 
+
 def makale_kalite_kontrol(makale, orijinal_baslik, orijinal_ozet):
     if not client or not makale:
         return makale, False, ["Kalite kontrolu calistirilamadi"]
- 
+
     prompt = f"""
 Sen NetDijital'in ikinci asama Turkce haber kalite editorusun.
- 
+
 KAYNAK BASLIK:
 {orijinal_baslik}
- 
+
 KAYNAK OZET:
 {orijinal_ozet}
- 
+
 URETILEN BASLIK:
 {makale.get("baslik", "")}
- 
+
 URETILEN HABER HTML:
 {makale.get("icerik_html", "")}
- 
+
 GOREV:
 Uretilen haberi yalnizca yukaridaki kaynak baslik ve kaynak ozet ile
 karsilastir. Disaridan yeni bilgi ekleme.
- 
+
 KONTROL KURALLARI:
 1. Kaynakta desteklenmeyen rakam, teknik ozellik, tarih, fiyat, alinti,
    sirket aciklamasi, kesin gelecek iddiasi veya neden-sonuc iddiasi varsa kaldir.
@@ -567,7 +574,7 @@ KONTROL KURALLARI:
    kaynak site adresi veya yeni kaynak ekleme.
 8. Anlami degistirmeden yazim ve noktalama sorunlarini duzelt.
 9. Sadece gecerli JSON dondur.
- 
+
 JSON:
 {{
   "durum": "TEMIZ" veya "DUZELTILDI",
@@ -576,12 +583,12 @@ JSON:
   "icerik_html": "<p>...</p>..."
 }}
 """
- 
+
     modeller = ["gemini-3.6-flash", "gemini-3.5-flash-lite"]
     gecici_isaretler = ("408", "500", "502", "503", "504", "UNAVAILABLE", "DEADLINE_EXCEEDED")
     kota_isaretleri = ("429", "RESOURCE_EXHAUSTED", "quota", "Quota")
     max_deneme = 2
- 
+
     for model in modeller:
         print(f"Kalite kontrol modeli deneniyor: {model}")
         for deneme in range(1, max_deneme + 1):
@@ -628,15 +635,20 @@ JSON:
                     break
                 if deneme < max_deneme:
                     time.sleep(5 + random.uniform(0.5, 1.5))
- 
+
     print("Kalite kontrolu tamamlanamadi; guvenlik geregi yayin akisi durdurulacak.")
     return makale, False, ["Kalite kontrolu tamamlanamadi"]
- 
- 
+
+
 # ============================================================
-# ICERIK YARDIMCILARI
+# ICERIK YARDIMCILARI - KAYNAK METNI CEKME
 # ============================================================
- 
+
+def haber_kelime_sayisi(icerik_html):
+    """HTML icerikteki gorunur kelime sayisini dondurur."""
+    return len(BeautifulSoup(icerik_html or "", "html.parser").get_text(" ").split())
+
+
 def entry_ozet(entry):
     ham = entry.get("summary") or entry.get("description") or ""
     if not ham and entry.get("content"):
@@ -647,16 +659,138 @@ def entry_ozet(entry):
     soup = BeautifulSoup(ham, "html.parser")
     metin = " ".join(soup.stripped_strings)
     return html.unescape(metin)[:12000]
- 
- 
+
+
+# Icerik disi (galeri, paylasim, ilgili haberler, yorum vb.) bloklari tanimlayan
+# sinif adi parcalari.
+_GURULTU_SINIF_RE = re.compile(
+    r"gallery|lightbox|wp-caption|share|social|related|comment|newsletter|advert|sidebar",
+    re.I,
+)
+_GURULTU_ETIKETLER = [
+    "script", "style", "noscript", "iframe", "figure", "figcaption",
+    "form", "button", "svg", "aside", "nav", "footer", "header",
+]
+
+
+def _temiz_metin(el):
+    metin = " ".join(el.stripped_strings)
+    metin = html.unescape(metin)
+    return re.sub(r"\s+", " ", metin).strip()
+
+
+def _paragraflari_cikar(kapsayici):
+    """Bir BeautifulSoup elemanindan haber govdesini paragraf/baslik/liste/tablo
+    satiri olarak temiz bir liste halinde dondurur. Elemani DEGISTIRIR; cagirmadan
+    once copy() almak gerekir."""
+    for t in kapsayici(_GURULTU_ETIKETLER):
+        try:
+            t.decompose()
+        except Exception:
+            pass
+    for t in kapsayici.find_all(class_=_GURULTU_SINIF_RE):
+        try:
+            t.decompose()
+        except Exception:
+            pass
+
+    parcalar = []
+    gorulen = set()
+    for el in kapsayici.find_all(["h2", "h3", "h4", "p", "li", "tr"]):
+        if el.name == "tr":
+            hucreler = [_temiz_metin(td) for td in el.find_all(["td", "th"])]
+            metin = " | ".join(h for h in hucreler if h)
+            min_uzunluk = 10
+        elif el.name in ("h2", "h3", "h4"):
+            metin = _temiz_metin(el)
+            min_uzunluk = 5
+            if metin:
+                metin = "## " + metin
+        elif el.name == "li":
+            if el.find(["p", "li"]):
+                continue  # ic ice yapi; icerigi zaten p/li olarak alinacak
+            metin = _temiz_metin(el)
+            min_uzunluk = 20
+        else:  # p
+            if el.find_parent(["td", "th"]):
+                continue  # tablo hucresi icinde zaten alindi
+            metin = _temiz_metin(el)
+            min_uzunluk = 40
+
+        if len(metin) < min_uzunluk:
+            continue
+        anahtar = metin.lower()
+        if anahtar in gorulen:
+            continue
+        gorulen.add(anahtar)
+        parcalar.append(metin)
+    return parcalar
+
+
+def _parcalari_metne_cevir(parcalar):
+    return "\n\n".join(parcalar).strip()
+
+
+def entry_tam_metin(entry):
+    """RSS'teki content:encoded alanindan tam haber metnini cikarir (WordPress
+    tabanli sitelerin cogu tam icerigi feed'e koyar). Yetersizse None dondurur."""
+    try:
+        icerikler = entry.get("content") or []
+        ham = max((c.get("value", "") for c in icerikler), key=len, default="")
+    except Exception:
+        ham = ""
+    if not ham:
+        return None
+    try:
+        soup = BeautifulSoup(ham, "html.parser")
+        metin = _parcalari_metne_cevir(_paragraflari_cikar(soup))
+    except Exception as e:
+        print(f"RSS tam icerik ayristirma hatasi: {e}")
+        return None
+    if len(metin) < 500:
+        return None
+    return metin[:30000]
+
+
+_GOVDE_SECICILER = [
+    "article",
+    '[itemprop="articleBody"]',
+    ".article-content", ".article-body", ".article-text", ".article_content",
+    ".post-content", ".post-body", ".post_content", ".entry-content",
+    ".single-content", ".the-content", ".td-post-content",
+    ".news-content", ".news-detail", ".news-text", ".detail-text",
+    ".content-detail", ".content-text", ".haber-metni", ".story-body",
+    ".elementor-widget-theme-post-content",
+    "#article-body", "#content-body", "main",
+]
+
+
+def _jsonld_article_body(soup):
+    """Sayfadaki JSON-LD bloklarindan articleBody alanini bulmaya calisir."""
+    for s in soup.find_all("script", type="application/ld+json"):
+        try:
+            veri = json.loads(s.string or s.get_text() or "")
+        except Exception:
+            continue
+        kuyruk = [veri]
+        while kuyruk:
+            o = kuyruk.pop()
+            if isinstance(o, list):
+                kuyruk.extend(o)
+            elif isinstance(o, dict):
+                govde = o.get("articleBody")
+                if isinstance(govde, str) and len(govde) > 500:
+                    return re.sub(r"\s+", " ", html.unescape(govde)).strip()
+                kuyruk.extend(v for v in o.values() if isinstance(v, (list, dict)))
+    return None
+
+
 def haber_tam_metni_cek(url):
-    """
-    Haber sayfasindaki asil metni cekmeye calisir.
-    Basarisiz veya yetersiz olursa None dondurur.
-    """
+    """Haber sayfasindaki asil metni cekmeye calisir. Basarisiz veya yetersiz
+    olursa None dondurur."""
     if not url:
         return None
- 
+
     headers = {
         "User-Agent": (
             "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
@@ -664,106 +798,92 @@ def haber_tam_metni_cek(url):
             "Chrome/153.0 Safari/537.36"
         ),
         "Accept-Language": "tr-TR,tr;q=0.9,en-US;q=0.8,en;q=0.7",
+        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
     }
- 
-    try:
-        response = requests.get(url, headers=headers, timeout=20)
-        response.raise_for_status()
- 
-        soup = BeautifulSoup(response.text, "html.parser")
- 
-        # Icerikle ilgisi olmayan bolumleri temizle.
-        for etiket in soup([
-            "script", "style", "noscript", "iframe",
-            "nav", "footer", "header", "form",
-            "aside", "button", "svg"
-        ]):
-            etiket.decompose()
- 
-        # Once standart <article> etiketini dene.
-        aday = soup.find("article")
- 
-        # Article yoksa yaygin haber govdesi siniflarini dene.
-        if not aday:
-            seciciler = [
-                '[itemprop="articleBody"]',
-                ".article-content",
-                ".article-body",
-                ".post-content",
-                ".post-body",
-                ".entry-content",
-                ".news-content",
-                ".news-detail",
-                ".content-detail",
-                ".story-body",
-            ]
- 
-            for secici in seciciler:
-                aday = soup.select_one(secici)
-                if aday:
-                    break
- 
-        if not aday:
-            print("Tam metin: haber govdesi bulunamadi.")
-            return None
- 
-        # Haber govdesi icindeki paragraflari al.
-        paragraflar = []
- 
-        for p in aday.find_all("p"):
-            metin = " ".join(p.stripped_strings)
-            metin = html.unescape(metin)
-            metin = re.sub(r"\s+", " ", metin).strip()
- 
-            # Cok kisa / anlamsiz paragraflari alma.
-            if len(metin) < 40:
-                continue
- 
-            paragraflar.append(metin)
- 
-        # Tekrarlanan paragraflari temizle.
-        temiz = []
-        gorulen = set()
- 
-        for paragraf in paragraflar:
-            anahtar = paragraf.lower()
- 
-            if anahtar in gorulen:
-                continue
- 
-            gorulen.add(anahtar)
-            temiz.append(paragraf)
- 
-        tam_metin = "\n\n".join(temiz).strip()
- 
-        # Cok az metin geldiyse guvenme.
-        if len(tam_metin) < 500:
-            print(
-                f"Tam metin yetersiz: {len(tam_metin)} karakter. "
-                "RSS ozetine geri donulecek."
-            )
-            return None
- 
-        # Gemini'ye kontrolsuz devasa sayfa gondermeyelim.
-        tam_metin = tam_metin[:30000]
- 
-        print(
-            f"Tam haber metni cekildi: "
-            f"{len(tam_metin)} karakter | "
-            f"{len(tam_metin.split())} kelime"
-        )
- 
-        return tam_metin
- 
-    except requests.exceptions.RequestException as e:
-        print(f"Tam metin HTTP hatasi: {e}")
+
+    response = None
+    for deneme in range(1, 3):
+        try:
+            response = requests.get(url, headers=headers, timeout=20)
+            response.raise_for_status()
+            break
+        except requests.exceptions.RequestException as e:
+            print(f"Tam metin HTTP hatasi (deneme {deneme}/2): {e}")
+            response = None
+            time.sleep(2)
+    if response is None:
         return None
- 
+
+    try:
+        soup = BeautifulSoup(response.text, "html.parser")
+
+        # Aday govdeleri topla; her biri icin ayri kopya uzerinden metin cikar
+        # ve EN UZUN sonucu sec (yanlis/kucuk <article> secme riskini azaltir).
+        en_iyi = ""
+        gorulen_idler = set()
+        for secici in _GOVDE_SECICILER:
+            try:
+                adaylar = soup.select(secici)
+            except Exception:
+                continue
+            for aday in adaylar[:5]:
+                if id(aday) in gorulen_idler:
+                    continue
+                gorulen_idler.add(id(aday))
+                try:
+                    metin = _parcalari_metne_cevir(_paragraflari_cikar(copy(aday)))
+                except Exception:
+                    continue
+                if len(metin) > len(en_iyi):
+                    en_iyi = metin
+
+        # JSON-LD articleBody daha uzunsa onu kullan.
+        jsonld = _jsonld_article_body(soup)
+        if jsonld and len(jsonld) > len(en_iyi):
+            print("Tam metin: JSON-LD articleBody kullanildi.")
+            en_iyi = jsonld
+
+        if len(en_iyi) < 500:
+            print(f"Tam metin yetersiz: {len(en_iyi)} karakter.")
+            return None
+
+        en_iyi = en_iyi[:30000]
+        print(
+            f"Sayfadan tam metin cekildi: {len(en_iyi)} karakter | "
+            f"{len(en_iyi.split())} kelime"
+        )
+        return en_iyi
+
     except Exception as e:
         print(f"Tam metin cekme hatasi: {e}")
         return None
- 
- 
+
+
+def kaynak_metnini_hazirla(entry, url, ozet):
+    """Gemini'ye verilecek kaynak metni secer. Oncelik:
+    1) RSS content:encoded (yeterince uzunsa sayfa hic cekilmez)
+    2) Haber sayfasi (RSS metniyle karsilastirilip en uzunu secilir)
+    3) RSS ozeti (yedek)
+    Donus: (metin, tur_aciklamasi)"""
+    rss_metin = entry_tam_metin(entry)
+    if rss_metin:
+        print(f"RSS tam icerik bulundu: {len(rss_metin)} karakter | {len(rss_metin.split())} kelime")
+        if len(rss_metin) >= RSS_TAM_ICERIK_YETERLI:
+            return rss_metin, "RSS TAM ICERIK"
+
+    sayfa_metin = haber_tam_metni_cek(url)
+
+    adaylar = [(m, t) for m, t in ((rss_metin, "RSS TAM ICERIK"), (sayfa_metin, "SAYFA TAM METNI")) if m]
+    if adaylar:
+        return max(adaylar, key=lambda x: len(x[0]))
+
+    return ozet, "RSS OZETI (yedek)"
+
+
+# ============================================================
+# ICERIK YARDIMCILARI - HTML BLOKLARI
+# ============================================================
+
 def kapak_html(gorsel_url, baslik, gorsel_kaynagi=None):
     if not gorsel_url:
         return ""
@@ -786,8 +906,8 @@ def kapak_html(gorsel_url, baslik, gorsel_kaynagi=None):
         'object-position:center;margin:0 !important;padding:0 !important" />'
         '</div>' + kredi
     )
- 
- 
+
+
 def cta_html(kategori=None):
     kategori = kategori_normalize(kategori)
     kategori_guvenli = html.escape(kategori)
@@ -804,8 +924,8 @@ def cta_html(kategori=None):
         'color:#fff;text-decoration:none;font-weight:600">Daha Fazla Haber &#8594;</a>'
         '</div>'
     )
- 
- 
+
+
 def kaynak_html(kaynak_adi, kaynak_url=None):
     ad = html.escape(kaynak_adi or "Orijinal kaynak")
     return (
@@ -816,12 +936,12 @@ def kaynak_html(kaynak_adi, kaynak_url=None):
         f'<strong>Kaynak:</strong> {ad}</p>'
         '</div>'
     )
- 
- 
+
+
 # ============================================================
 # BLOGGER
 # ============================================================
- 
+
 def blogger_yayinla(access_token, baslik, icerik, etiketler, taslak=False):
     if not access_token or not BLOGGER_BLOG_ID:
         return None
@@ -837,8 +957,8 @@ def blogger_yayinla(access_token, baslik, icerik, etiketler, taslak=False):
     except Exception as e:
         print(f"Blogger istek hatasi: {e}")
     return None
- 
- 
+
+
 def gerekli_ayarlar_tamam():
     gerekli = {"GEMINI_API_KEY": GEMINI_API_KEY}
     if not TEST_MODU:
@@ -853,25 +973,17 @@ def gerekli_ayarlar_tamam():
         print("Eksik ortam degiskenleri:", ", ".join(eksik))
         return False
     return True
- 
- 
+
+
 # ============================================================
-# ANA AKIS
+# ADAY HABER SECIMI
 # ============================================================
- 
-def main():
-    if not gerekli_ayarlar_tamam():
-        return
- 
-    history = load_history()
-    yayinlanan = set(history.get("yayinlanan_linkler", []))
+
+def aday_haberler(yayinlanan, baslangic):
+    """Kaynaklari sirayla gezer ve her kaynaktan, daha once islenmemis ilk haberi
+    (idx, kaynak, entry) olarak uretir. Tembel calisir: bir sonraki kaynagin
+    feed'i yalnizca onceki aday kabul edilmediyse indirilir."""
     kaynak_sayisi = len(RSS_SOURCES)
-    baslangic = int(history.get("son_kaynak_index", 0)) % kaynak_sayisi
- 
-    secilen = None
-    secilen_kaynak = None
-    secilen_index = None
- 
     for offset in range(kaynak_sayisi):
         idx = (baslangic + offset) % kaynak_sayisi
         kaynak = RSS_SOURCES[idx]
@@ -880,69 +992,138 @@ def main():
             link = normalize_url(entry.get("link"))
             baslik = (entry.get("title") or "").strip()
             if link and baslik and link not in yayinlanan:
-                secilen = entry
-                secilen_kaynak = kaynak
-                secilen_index = idx
+                yield idx, kaynak, entry
                 break
-        if secilen:
+
+
+# ============================================================
+# ANA AKIS
+# ============================================================
+
+def main():
+    if not gerekli_ayarlar_tamam():
+        return
+
+    history = load_history()
+    linkler = list(history.get("yayinlanan_linkler", []))  # sirasi korunur
+    yayinlanan = set(linkler)
+    kaynak_sayisi = len(RSS_SOURCES)
+    baslangic = int(history.get("son_kaynak_index", 0)) % kaynak_sayisi
+
+    atlanan = 0
+    denenen = 0
+    son_idx = None
+    hazir = None      # basarili aday burada toplanir
+    durdur = False    # Gemini/kalite kontrol altyapi hatasi: tum calismayi durdur
+
+    def atla(url, neden):
+        """Haberi gecmise 'islendi' diye ekler; bir daha secilmez."""
+        nonlocal atlanan
+        atlanan += 1
+        print(f"ATLANDI ({neden}): {url}")
+        if url and url not in yayinlanan:
+            yayinlanan.add(url)
+            linkler.append(url)
+
+    for idx, kaynak, entry in aday_haberler(yayinlanan, baslangic):
+        if denenen >= MAX_ADAY_DENEMESI:
+            print(f"En fazla {MAX_ADAY_DENEMESI} aday denendi; bu calismada durduruluyor.")
             break
- 
-    if not secilen:
-        print("Yeni haber bulunamadi.")
+        denenen += 1
+        son_idx = idx
+
+        kaynak_url = normalize_url(entry.get("link"))
+        orijinal_baslik = html.unescape((entry.get("title") or "").strip())
+        ozet = entry_ozet(entry)
+
+        print(f"\n--- Aday {denenen}/{MAX_ADAY_DENEMESI} ---")
+        print(f"Secilen haber: {orijinal_baslik} [{kaynak['kaynak']}]")
+
+        # 1) Kaynak metni (RSS tam icerik -> sayfa -> RSS ozeti)
+        kaynak_metin, metin_turu = kaynak_metnini_hazirla(entry, kaynak_url, ozet)
+        kaynak_kelime = len(kaynak_metin.split())
+        print(f"Gemini kaynak metni: {metin_turu} | {kaynak_kelime} kelime")
+
+        if kaynak_kelime < MIN_KAYNAK_KELIME:
+            atla(kaynak_url, f"kaynak metin kisa: {kaynak_kelime} < {MIN_KAYNAK_KELIME} kelime")
+            continue
+
+        # 2) Haber uretimi
+        makale, ok = llm_ile_makale_uret(orijinal_baslik, kaynak_metin)
+        if not ok or not makale:
+            print("Makale uretilemedi; yayin yapilmadi.")
+            durdur = True
+            break
+
+        kelime = haber_kelime_sayisi(makale.get("icerik_html", ""))
+        if kelime < MIN_HABER_KELIME:
+            atla(kaynak_url, f"uretilen haber kisa: {kelime} < {MIN_HABER_KELIME} kelime")
+            continue
+
+        # 3) Kalite kontrolu (tek sefer)
+        makale, kalite_ok, kalite_sorunlari = makale_kalite_kontrol(
+            makale, orijinal_baslik, kaynak_metin
+        )
+        if not kalite_ok:
+            print("AI kalite kontrolu tamamlanamadi; guvenlik geregi yayin yapilmadi.")
+            durdur = True
+            break
+
+        kelime = haber_kelime_sayisi(makale.get("icerik_html", ""))
+        print(f"Kalite kontrolu sonrasi kelime sayisi: {kelime}")
+        if kelime < MIN_HABER_KELIME:
+            atla(kaynak_url, f"kalite kontrolu sonrasi haber kisa: {kelime} < {MIN_HABER_KELIME} kelime")
+            continue
+
+        hazir = {
+            "idx": idx,
+            "kaynak": kaynak,
+            "kaynak_url": kaynak_url,
+            "orijinal_baslik": orijinal_baslik,
+            "makale": makale,
+            "kalite_sorunlari": kalite_sorunlari,
+            "kelime": kelime,
+            "metin_turu": metin_turu,
+        }
+        break
+
+    # Atlanan haberleri kalici olarak kaydet (test modunda gecmise dokunma).
+    if atlanan and not TEST_MODU:
+        if son_idx is not None:
+            history["son_kaynak_index"] = (son_idx + 1) % kaynak_sayisi
+        gecmisi_kaydet(history, linkler)
+
+    if not hazir:
+        if denenen == 0:
+            print("Yeni haber bulunamadi.")
+        elif not durdur:
+            print(f"{denenen} aday denendi, {atlanan} tanesi kisa/yetersiz oldugu icin atlandi; yayin yapilmadi.")
         return
- 
-    kaynak_url = normalize_url(secilen.get("link"))
-    orijinal_baslik = html.unescape((secilen.get("title") or "").strip())
-    ozet = entry_ozet(secilen)
- 
-    print(f"Secilen haber: {orijinal_baslik} [{secilen_kaynak['kaynak']}]")
- 
-    # Once kaynak sayfadaki tam haber metnini cekmeye calis.
-    tam_metin = haber_tam_metni_cek(kaynak_url)
- 
-    if tam_metin:
-        kaynak_metin = tam_metin
-        print("Gemini kaynak metni: TAM HABER METNI")
-    else:
-        kaynak_metin = ozet
-        print("Gemini kaynak metni: RSS OZETI (fallback)")
- 
-    makale, ok = llm_ile_makale_uret(
-        orijinal_baslik,
-        kaynak_metin
-    )
- 
-    if not ok or not makale:
-        print("Makale uretilemedi; yayin yapilmadi.")
-        return
- 
-    makale, kalite_ok, kalite_sorunlari = makale_kalite_kontrol(
-        makale,
-        orijinal_baslik,
-        kaynak_metin
-    )
- 
-    if not kalite_ok:
-        print("AI kalite kontrolu tamamlanamadi; guvenlik geregi yayin yapilmadi.")
-        return
- 
+
+    secilen_index = hazir["idx"]
+    secilen_kaynak = hazir["kaynak"]
+    kaynak_url = hazir["kaynak_url"]
+    orijinal_baslik = hazir["orijinal_baslik"]
+    makale = hazir["makale"]
+    kalite_sorunlari = hazir["kalite_sorunlari"]
+
     kategori = kategori_normalize(makale.get("kategori"))
     yazar = kategori_yazari(kategori)
     etiketler = [kategori]
- 
+
     gorsel_url, gorsel_kaynagi = kapak_gorseli_hazirla(
         makale.get("gorsel_prompt", "modern technology concept"),
         kategori,
         makale.get("baslik", orijinal_baslik),
     )
- 
+
     icerik = (
         kapak_html(gorsel_url, makale["baslik"], gorsel_kaynagi)
         + makale.get("icerik_html", "")
         + cta_html(kategori)
         + kaynak_html(secilen_kaynak["kaynak"], kaynak_url)
     )
- 
+
     if TEST_MODU:
         print("\n" + "=" * 64)
         print("[NETDIJITAL GUVENLI TEST MODU]")
@@ -954,6 +1135,9 @@ def main():
         print(f"Gorsel kaynagi : {gorsel_kaynagi or 'yok'}")
         print(f"Kapak URL      : {gorsel_url or 'yok'}")
         print(f"Kaynak         : {secilen_kaynak['kaynak']}")
+        print(f"Kaynak metin   : {hazir['metin_turu']}")
+        print(f"Haber kelime   : {hazir['kelime']}")
+        print(f"Atlanan haber  : {atlanan} (test modunda gecmise kaydedilmez)")
         print(f"Kalite kontrol : BASARILI")
         if kalite_sorunlari:
             print(f"Kalite notlari : {' | '.join(kalite_sorunlari)}")
@@ -961,36 +1145,33 @@ def main():
         print("SONUC          : BLOGGER YAYINI ATLANDI")
         print("=" * 64)
         return
- 
+
     token = get_access_token(CLIENT_ID, CLIENT_SECRET, REFRESH_TOKEN)
     if not token:
         print("Google access token alinamadi.")
         return
- 
+
     sonuc = blogger_yayinla(token, makale["baslik"], icerik, etiketler, TASLAK_OLARAK_KAYDET)
     if not sonuc:
-        print("Yayin basarisiz; history guncellenmedi.")
+        print("Yayin basarisiz; yayinlanan haberin linki gecmise eklenmedi.")
         return
- 
-    yayinlanan.add(kaynak_url)
-    history["yayinlanan_linkler"] = list(yayinlanan)
+
+    if kaynak_url and kaynak_url not in yayinlanan:
+        yayinlanan.add(kaynak_url)
+        linkler.append(kaynak_url)
     history["son_kaynak_index"] = (secilen_index + 1) % kaynak_sayisi
     history["son_paylasim_zamani"] = int(time.time())
-    save_history(history)
-    github_history_save()
- 
+    gecmisi_kaydet(history, linkler)
+
     durum = "Taslak" if TASLAK_OLARAK_KAYDET else "Yayinlandi"
     print(f"{durum}: {sonuc.get('url') or sonuc.get('id')}")
     print(f"Kategori: {kategori} | Yazar: {yazar} | Etiketler: {', '.join(etiketler)}")
     print(f"Gorsel: {gorsel_kaynagi or 'yok'} - {gorsel_url or 'fallback tanimsiz'}")
- 
- 
+
+
 if __name__ == "__main__":
     try:
         main()
     except Exception:
         traceback.print_exc()
         raise
- 
-
-
