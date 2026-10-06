@@ -922,17 +922,18 @@ def main():
     if not kalite_ok:
         print("AI kalite kontrolu tamamlanamadi; guvenlik geregi yayin yapilmadi.")
         return
-
     makale, kalite_ok, kalite_sorunlari = makale_kalite_kontrol(
-    makale,
-    orijinal_baslik,
-    kaynak_metin
-)
+        makale,
+        orijinal_baslik,
+        kaynak_metin
+    )
+
     if not kalite_ok:
         print("AI kalite kontrolu tamamlanamadi; guvenlik geregi yayin yapilmadi.")
         return
 
     kategori = kategori_normalize(makale.get("kategori"))
+
     yazar = kategori_yazari(kategori)
     etiketler = [kategori]
 
