@@ -395,9 +395,21 @@ def github_kapak_yukle(jpeg_bytes, baslik):
         }
         if sha:
             payload["sha"] = sha
-        r = requests.put(api_url, headers=headers, json=payload, timeout=30)
-        if r.status_code not in (200, 201):
-            print("Kapak GitHub yukleme hatasi:", r.status_code, r.text[:500])
+        r = None
+        for deneme in range(1, 4):
+            r = requests.put(api_url, headers=headers, json=payload, timeout=30)
+            if r.status_code in (200, 201):
+                break
+            print(f"Kapak GitHub yukleme hatasi (deneme {deneme}/3): {r.status_code} {r.text[:300]}")
+            if r.status_code < 500 and r.status_code != 409:
+                break  # kalici hata (izin vb.); tekrar denemenin anlami yok
+            if r.status_code == 409:
+                # sha cakismasi: guncel sha'yi al ve tekrar dene
+                m = requests.get(api_url, headers=headers, params={"ref": GITHUB_BRANCH}, timeout=20)
+                if m.status_code == 200:
+                    payload["sha"] = m.json().get("sha")
+            time.sleep(3 * deneme)
+        if r is None or r.status_code not in (200, 201):
             return None
         owner_repo = GITHUB_REPOSITORY.strip("/")
         return f"https://raw.githubusercontent.com/{owner_repo}/{GITHUB_BRANCH}/{path}"
