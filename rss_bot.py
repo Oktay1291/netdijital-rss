@@ -1,4 +1,4 @@
-# NetDijital v2.1 - Saatlik Otomatik Haber + Ucretsiz AI Gorsel Uretimi
+# NetDijital v2.2 - Saatlik Otomatik Haber + Ucretsiz AI Gorsel Uretimi
 # v2.0 degisiklikleri:
 #   - Pexels kaldirildi; her haber icin Pollinations.ai ile ucretsiz 16:9 AI kapak.
 #   - Kelime hedefi 800-1200.
@@ -12,6 +12,8 @@
 #   - Gecmis listesi artik sirayi koruyor (eski surumde set kullanildigi icin
 #     3000 limiti asildiginda rastgele linkler siliniyordu).
 #   - main() girinti hatasi ve cift kalite kontrol cagrisi duzeltildi.
+# v2.2 degisiklikleri:
+#   - Yayin sonrasi otomatik sosyal medya paylasimi (Facebook, Instagram, X). Secret'i olmayan platform atlanir; test modunda paylasim yok.
 import os
 import json
 import random
@@ -23,6 +25,8 @@ import re
 import io
 import hashlib
 import unicodedata
+import hmac
+import secrets
 from copy import copy
 from datetime import datetime, timezone
 from urllib.parse import urljoin, quote
@@ -988,6 +992,191 @@ def gerekli_ayarlar_tamam():
 
 
 # ============================================================
+# SOSYAL MEDYA PAYLASIMI (Facebook, Instagram, X)
+# ============================================================
+# Her platform bagimsiz ve istege baglidir: ilgili GitHub Secret'lari
+# tanimli degilse platform sessizce atlanir. Bir platformdaki hata digerlerini
+# ve blog yayinini ETKILEMEZ. Test modunda hicbir paylasim yapilmaz.
+#
+# Gerekli ortam degiskenleri (GitHub Secrets -> workflow'daki env):
+#   Facebook : FACEBOOK_PAGE_ID, FACEBOOK_PAGE_TOKEN
+#   Instagram: INSTAGRAM_USER_ID, INSTAGRAM_TOKEN (yoksa FACEBOOK_PAGE_TOKEN kullanilir)
+#   X        : X_API_KEY, X_API_SECRET, X_ACCESS_TOKEN, X_ACCESS_SECRET
+# SOSYAL_PAYLASIM=false yapilirsa tum paylasimlar kapatilir.
+
+FB_GRAPH_BASE = "https://graph.facebook.com/v26.0"
+SOSYAL_PAYLASIM = os.getenv("SOSYAL_PAYLASIM", "true").strip().lower() in {"1", "true", "yes", "on"}
+
+
+def _env(ad):
+    return (os.getenv(ad) or "").strip()
+
+
+def sosyal_platform_durumu():
+    """Hangi platformlarin yapilandirildigini dondurur."""
+    return {
+        "Facebook": bool(_env("FACEBOOK_PAGE_ID") and _env("FACEBOOK_PAGE_TOKEN")),
+        "Instagram": bool(
+            _env("INSTAGRAM_USER_ID") and (_env("INSTAGRAM_TOKEN") or _env("FACEBOOK_PAGE_TOKEN"))
+        ),
+        "X": all(_env(k) for k in ("X_API_KEY", "X_API_SECRET", "X_ACCESS_TOKEN", "X_ACCESS_SECRET")),
+    }
+
+
+def _hashtagler(kategori):
+    kat = re.sub(r"[\W_]+", "", str(kategori or ""))
+    etiketler = ["#NetDijital", "#teknoloji"]
+    if kat:
+        etiketler.append(f"#{kat}")
+    return " ".join(etiketler)
+
+
+def _kisalt(metin, uzunluk):
+    metin = re.sub(r"\s+", " ", str(metin or "")).strip()
+    if len(metin) <= uzunluk:
+        return metin
+    return metin[: max(0, uzunluk - 1)].rstrip() + "…"
+
+
+def facebook_paylas(baslik, aciklama, post_url):
+    sayfa_id, token = _env("FACEBOOK_PAGE_ID"), _env("FACEBOOK_PAGE_TOKEN")
+    mesaj = f"{baslik}\n\n{_kisalt(aciklama, 300)}".strip()
+    try:
+        r = requests.post(
+            f"{FB_GRAPH_BASE}/{sayfa_id}/feed",
+            data={"message": mesaj, "link": post_url, "access_token": token},
+            timeout=30,
+        )
+        if r.status_code in (200, 201):
+            print(f"Facebook paylasimi basarili: {r.json().get('id')}")
+            return True
+        print("Facebook paylasim hatasi:", r.status_code, r.text[:500])
+    except Exception as e:
+        print(f"Facebook istek hatasi: {e}")
+    return False
+
+
+def instagram_paylas(baslik, aciklama, kategori, gorsel_url):
+    ig_id = _env("INSTAGRAM_USER_ID")
+    token = _env("INSTAGRAM_TOKEN") or _env("FACEBOOK_PAGE_TOKEN")
+    if not gorsel_url:
+        print("Instagram: gorsel URL'si yok; atlandi.")
+        return False
+    # Instagram aciklamalarindaki linkler tiklanmaz; bio'ya yonlendirme eklenir.
+    caption = (
+        f"{baslik}\n\n{_kisalt(aciklama, 300)}\n\n"
+        f"Haberin tamami icin profilimizdeki linke tiklayin.\n\n{_hashtagler(kategori)}"
+    )
+    try:
+        r = requests.post(
+            f"{FB_GRAPH_BASE}/{ig_id}/media",
+            data={"image_url": gorsel_url, "caption": caption[:2200], "access_token": token},
+            timeout=60,
+        )
+        if r.status_code not in (200, 201):
+            print("Instagram medya olusturma hatasi:", r.status_code, r.text[:500])
+            return False
+        container_id = r.json().get("id")
+
+        for _ in range(10):  # container hazir olana kadar bekle
+            d = requests.get(
+                f"{FB_GRAPH_BASE}/{container_id}",
+                params={"fields": "status_code", "access_token": token},
+                timeout=30,
+            )
+            durum = d.json().get("status_code") if d.status_code == 200 else None
+            if durum == "FINISHED":
+                break
+            if durum == "ERROR":
+                print("Instagram medya isleme hatasi:", d.text[:300])
+                return False
+            time.sleep(3)
+
+        p = requests.post(
+            f"{FB_GRAPH_BASE}/{ig_id}/media_publish",
+            data={"creation_id": container_id, "access_token": token},
+            timeout=60,
+        )
+        if p.status_code in (200, 201):
+            print(f"Instagram paylasimi basarili: {p.json().get('id')}")
+            return True
+        print("Instagram yayinlama hatasi:", p.status_code, p.text[:500])
+    except Exception as e:
+        print(f"Instagram istek hatasi: {e}")
+    return False
+
+
+def _oauth1_header(method, url, ck, cs, at, ats):
+    """X API icin OAuth 1.0a (kullanici baglami) imzali Authorization basligi.
+    JSON govde imzaya dahil edilmez."""
+    enc = lambda v: quote(str(v), safe="~")
+    params = {
+        "oauth_consumer_key": ck,
+        "oauth_nonce": secrets.token_hex(16),
+        "oauth_signature_method": "HMAC-SHA1",
+        "oauth_timestamp": str(int(time.time())),
+        "oauth_token": at,
+        "oauth_version": "1.0",
+    }
+    param_str = "&".join(f"{enc(k)}={enc(v)}" for k, v in sorted(params.items()))
+    base = "&".join([method.upper(), enc(url), enc(param_str)])
+    key = f"{enc(cs)}&{enc(ats)}"
+    imza = base64.b64encode(hmac.new(key.encode(), base.encode(), hashlib.sha1).digest()).decode()
+    params["oauth_signature"] = imza
+    return "OAuth " + ", ".join(f'{enc(k)}="{enc(v)}"' for k, v in sorted(params.items()))
+
+
+def x_paylas(baslik, post_url, kategori):
+    # Link X'te 23 karakter sayilir. Link icerdigi icin bu paylasim X tarafinda
+    # link ucretiyle faturalanabilir (bkz. X API pay-per-use fiyatlari).
+    etiket = _hashtagler(kategori).split()[0:2]
+    metin = f"{_kisalt(baslik, 200)}\n\n{post_url}\n{' '.join(etiket)}"
+    url = "https://api.x.com/2/tweets"
+    try:
+        auth = _oauth1_header(
+            "POST", url,
+            _env("X_API_KEY"), _env("X_API_SECRET"), _env("X_ACCESS_TOKEN"), _env("X_ACCESS_SECRET"),
+        )
+        r = requests.post(
+            url,
+            headers={"Authorization": auth, "Content-Type": "application/json"},
+            json={"text": metin},
+            timeout=30,
+        )
+        if r.status_code in (200, 201):
+            print(f"X paylasimi basarili: {(r.json().get('data') or {}).get('id')}")
+            return True
+        print("X paylasim hatasi:", r.status_code, r.text[:500])
+    except Exception as e:
+        print(f"X istek hatasi: {e}")
+    return False
+
+
+def sosyal_medyada_paylas(baslik, aciklama, kategori, post_url, gorsel_url):
+    """Yapilandirilmis tum platformlara paylasir. Hicbir hata disari firlatilmaz."""
+    if not SOSYAL_PAYLASIM:
+        print("Sosyal medya paylasimi kapali (SOSYAL_PAYLASIM=false).")
+        return
+    durum = sosyal_platform_durumu()
+    aktifler = [ad for ad, ok in durum.items() if ok]
+    if not aktifler:
+        print("Sosyal medya: yapilandirilmis platform yok; atlandi.")
+        return
+    print(f"Sosyal medya paylasimi baslatiliyor: {', '.join(aktifler)}")
+
+    gorevler = {
+        "Facebook": lambda: facebook_paylas(baslik, aciklama, post_url),
+        "Instagram": lambda: instagram_paylas(baslik, aciklama, kategori, gorsel_url),
+        "X": lambda: x_paylas(baslik, post_url, kategori),
+    }
+    for ad in aktifler:
+        try:
+            gorevler[ad]()
+        except Exception as e:
+            print(f"{ad} paylasimi beklenmeyen hata verdi: {e}")
+
+
+# ============================================================
 # ADAY HABER SECIMI
 # ============================================================
 
@@ -1150,6 +1339,9 @@ def main():
         print(f"Kaynak metin   : {hazir['metin_turu']}")
         print(f"Haber kelime   : {hazir['kelime']}")
         print(f"Atlanan haber  : {atlanan} (test modunda gecmise kaydedilmez)")
+        _sd = sosyal_platform_durumu()
+        print("Sosyal medya   : " + ", ".join(f"{k}={'HAZIR' if v else 'ayarsiz'}" for k, v in _sd.items())
+              + " (test modunda paylasim yapilmaz)")
         print(f"Kalite kontrol : BASARILI")
         if kalite_sorunlari:
             print(f"Kalite notlari : {' | '.join(kalite_sorunlari)}")
@@ -1179,6 +1371,22 @@ def main():
     print(f"{durum}: {sonuc.get('url') or sonuc.get('id')}")
     print(f"Kategori: {kategori} | Yazar: {yazar} | Etiketler: {', '.join(etiketler)}")
     print(f"Gorsel: {gorsel_kaynagi or 'yok'} - {gorsel_url or 'fallback tanimsiz'}")
+
+    # Blog yayini basarili oldu; sosyal medya paylasimi ayri ve hataya dayanikli.
+    post_url = sonuc.get("url")
+    if post_url and not TASLAK_OLARAK_KAYDET:
+        try:
+            sosyal_medyada_paylas(
+                makale["baslik"],
+                makale.get("meta_aciklama") or "",
+                kategori,
+                post_url,
+                gorsel_url,
+            )
+        except Exception as e:
+            print(f"Sosyal medya paylasimi hatasi (blog yayini etkilenmedi): {e}")
+    else:
+        print("Sosyal medya: taslak veya URL yok; paylasim yapilmadi.")
 
 
 if __name__ == "__main__":
