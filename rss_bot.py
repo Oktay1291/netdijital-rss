@@ -493,7 +493,7 @@ JSON:
     modeller = ["gemini-3.6-flash", "gemini-3.5-flash-lite"]
     gecici_isaretler = ("408", "500", "502", "503", "504", "UNAVAILABLE", "DEADLINE_EXCEEDED")
     kota_isaretleri = ("429", "RESOURCE_EXHAUSTED", "quota", "Quota")
-    max_deneme = 2
+    max_deneme = 3
 
     for model in modeller:
         print(f"Gemini modeli deneniyor: {model}")
@@ -539,8 +539,8 @@ JSON:
                     print(f"Kalici/istek hatasi gorundu; {model} icin tekrar denenmeyecek.")
                     break
                 if deneme < max_deneme:
-                    bekle = 5 + random.uniform(0.5, 1.5)
-                    print(f"Gecici servis hatasi; yalnizca 1 tekrar yapilacak. {bekle:.1f} saniye bekleniyor.")
+                    bekle = 8 * deneme + random.uniform(0.5, 1.5)
+                    print(f"Gecici servis hatasi; tekrar denenecek. {bekle:.1f} saniye bekleniyor.")
                     time.sleep(bekle)
                 else:
                     print(f"{model} gecici hata nedeniyle kullanilamadi; fallback modele geciliyor.")
@@ -603,7 +603,7 @@ JSON:
     modeller = ["gemini-3.6-flash", "gemini-3.5-flash-lite"]
     gecici_isaretler = ("408", "500", "502", "503", "504", "UNAVAILABLE", "DEADLINE_EXCEEDED")
     kota_isaretleri = ("429", "RESOURCE_EXHAUSTED", "quota", "Quota")
-    max_deneme = 2
+    max_deneme = 3
 
     for model in modeller:
         print(f"Kalite kontrol modeli deneniyor: {model}")
@@ -650,7 +650,7 @@ JSON:
                 if not gecici:
                     break
                 if deneme < max_deneme:
-                    time.sleep(5 + random.uniform(0.5, 1.5))
+                    time.sleep(8 * deneme + random.uniform(0.5, 1.5))
 
     print("Kalite kontrolu tamamlanamadi; guvenlik geregi yayin akisi durdurulacak.")
     return makale, False, ["Kalite kontrolu tamamlanamadi"]
