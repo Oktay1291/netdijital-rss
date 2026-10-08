@@ -70,6 +70,12 @@ MAX_ADAY_DENEMESI = int(os.getenv("MAX_ADAY_DENEMESI", "5"))
 # RSS'teki tam icerik bu karakter sayisindan uzunsa haber sayfasi hic cekilmez.
 RSS_TAM_ICERIK_YETERLI = 2500
 
+# Birincil (daha iyi) Gemini modeli. Yedek model (lite) kisa yazma egiliminde
+# oldugu icin, yedek modelin urettigi KISA haber kalici olarak atlanmaz;
+# haber gecmise yazilmadan sonraki calismada tekrar denenir.
+BIRINCIL_MODEL = "gemini-3.6-flash"
+YEDEK_MODEL = "gemini-3.5-flash-lite"
+
 # Bilgi amacli: bu betik tek calismada TEK haber yayinlar. Saatte bir mi,
 # 3 saatte bir mi calisacagini GitHub Actions workflow'undaki cron belirler.
 
@@ -100,8 +106,6 @@ RSS_SOURCES = [
     {"kaynak": "Webtekno", "url": "https://www.webtekno.com/rss"},
     {"kaynak": "Tamindir", "url": "https://www.tamindir.com/rss/"},
     {"kaynak": "TechReview", "url": "https://techreview.com.tr/feed/"},
-    {"kaynak": "Teknolojioku", "url": "https://www.teknolojioku.com/rss"},
-    {"kaynak": "Techolay", "url": "https://techolay.net/feed/"},
     {"kaynak": "Teknoblog", "url": "https://www.teknoblog.com/feed/"},
 
     # --- Birinci elden buyuk teknoloji sirketi duyurulari (resmi RSS) ---
@@ -490,7 +494,7 @@ JSON:
 }}
 """
 
-    modeller = ["gemini-3.6-flash", "gemini-3.5-flash-lite"]
+    modeller = [BIRINCIL_MODEL, YEDEK_MODEL]
     gecici_isaretler = ("408", "500", "502", "503", "504", "UNAVAILABLE", "DEADLINE_EXCEEDED")
     kota_isaretleri = ("429", "RESOURCE_EXHAUSTED", "quota", "Quota")
     max_deneme = 3
@@ -519,6 +523,7 @@ JSON:
                         raise ValueError(f"Eksik JSON alani: {alan}")
                 data["kategori"] = kategori_normalize(data.get("kategori"))
                 data["etiketler"] = [data["kategori"]]
+                data["_model"] = model
 
                 kelime_sayisi = haber_kelime_sayisi(data["icerik_html"])
                 print(f"Uretilen icerik kelime sayisi: {kelime_sayisi}")
@@ -600,7 +605,7 @@ JSON:
 }}
 """
 
-    modeller = ["gemini-3.6-flash", "gemini-3.5-flash-lite"]
+    modeller = [BIRINCIL_MODEL, YEDEK_MODEL]
     gecici_isaretler = ("408", "500", "502", "503", "504", "UNAVAILABLE", "DEADLINE_EXCEEDED")
     kota_isaretleri = ("429", "RESOURCE_EXHAUSTED", "quota", "Quota")
     max_deneme = 3
@@ -1258,6 +1263,12 @@ def main():
 
         kelime = haber_kelime_sayisi(makale.get("icerik_html", ""))
         if kelime < MIN_HABER_KELIME:
+            if makale.get("_model") != BIRINCIL_MODEL:
+                print(
+                    f"GECICI ATLANDI (yedek model kisa yazdi: {kelime} < {MIN_HABER_KELIME} kelime); "
+                    "haber gecmise yazilmadi, sonraki calismada tekrar denenecek."
+                )
+                continue
             atla(kaynak_url, f"uretilen haber kisa: {kelime} < {MIN_HABER_KELIME} kelime")
             continue
 
@@ -1273,6 +1284,12 @@ def main():
         kelime = haber_kelime_sayisi(makale.get("icerik_html", ""))
         print(f"Kalite kontrolu sonrasi kelime sayisi: {kelime}")
         if kelime < MIN_HABER_KELIME:
+            if makale.get("_model") != BIRINCIL_MODEL:
+                print(
+                    f"GECICI ATLANDI (yedek model, kalite kontrolu sonrasi kisa: {kelime} kelime); "
+                    "haber gecmise yazilmadi, sonraki calismada tekrar denenecek."
+                )
+                continue
             atla(kaynak_url, f"kalite kontrolu sonrasi haber kisa: {kelime} < {MIN_HABER_KELIME} kelime")
             continue
 
