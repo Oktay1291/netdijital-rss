@@ -1045,16 +1045,24 @@ def _kisalt(metin, uzunluk):
 
 def facebook_paylas(baslik, aciklama, post_url):
     sayfa_id, token = _env("FACEBOOK_PAGE_ID"), _env("FACEBOOK_PAGE_TOKEN")
+    if not sayfa_id or not token or not post_url:
+        print("Facebook: sayfa ID, Page Token veya haber URL'si eksik; paylasim atlandi.")
+        return False
     mesaj = f"{baslik}\n\n{_kisalt(aciklama, 300)}".strip()
     try:
         r = requests.post(
             f"{FB_GRAPH_BASE}/{sayfa_id}/feed",
-            data={"message": mesaj, "link": post_url, "access_token": token},
+            headers={"Authorization": f"Bearer {token}"},
+            data={"message": mesaj, "link": post_url},
             timeout=30,
         )
         if r.status_code in (200, 201):
-            print(f"Facebook paylasimi basarili: {r.json().get('id')}")
-            return True
+            paylasim_id = r.json().get("id")
+            if paylasim_id:
+                print(f"Facebook paylasimi basarili: {paylasim_id}")
+                return True
+            print("Facebook: yanit basarili ancak paylasim ID'si gelmedi.")
+            return False
         print("Facebook paylasim hatasi:", r.status_code, r.text[:500])
     except Exception as e:
         print(f"Facebook istek hatasi: {e}")
